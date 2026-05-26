@@ -1,0 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dark-base text-zinc-100 font-sans antialiased overflow-x-hidden;
+  }
+}
+
+/* Custom scrollbar styling for Discord + LeetCode premium feel */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0B0F19;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Custom transitions and glassmorphism helpers */
+.glass-card {
+  background: rgba(22, 29, 48, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(37, 50, 78, 0.4);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #6366F1 0%, #3B82F6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
