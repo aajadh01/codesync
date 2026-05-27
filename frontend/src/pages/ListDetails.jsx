@@ -56,11 +56,33 @@ const ListDetails = () => {
     fetchListDetails();
   }, [id]);
 
-  // Clean LeetCode url to auto-generate title
-  const handleProblemInputBlur = () => {
+  // Clean LeetCode url to auto-generate title or fetch automatically by number
+  const handleProblemInputBlur = async () => {
     if (!problemInput.trim()) return;
 
     let input = problemInput.trim();
+    
+    // Check if it's a problem number
+    if (/^\d+$/.test(input)) {
+      setModalError('');
+      setModalLoading(true);
+      try {
+        const res = await api.get(`/problems/leetcode/${input}`);
+        setProblemTitle(res.data.title);
+        setProblemDifficulty(res.data.difficulty);
+        setProblemInput(res.data.url); // Convert number to full URL automatically!
+      } catch (err) {
+        console.error('Failed to fetch problem by number:', err);
+        // Fallback to basic placeholders if not found
+        if (!problemTitle) {
+          setProblemTitle(`Problem #${input}`);
+        }
+      } finally {
+        setModalLoading(false);
+      }
+      return;
+    }
+
     // Check if it's a URL
     if (input.includes('leetcode.com/problems/')) {
       try {
@@ -79,11 +101,6 @@ const ListDetails = () => {
         }
       } catch (err) {
         console.error('Failed to parse URL', err);
-      }
-    } else if (/^\d+$/.test(input)) {
-      // It's a problem number
-      if (!problemTitle) {
-        setProblemTitle(`Problem #${input}`);
       }
     }
   };

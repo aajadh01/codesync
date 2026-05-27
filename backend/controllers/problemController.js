@@ -90,7 +90,61 @@ const toggleSolved = async (req, res) => {
   }
 };
 
+// @desc    Fetch LeetCode problem details by number/ID
+// @route   GET /api/problems/leetcode/:number
+// @access  Private
+const getLeetCodeProblemDetails = async (req, res) => {
+  try {
+    const numberStr = req.params.number;
+    if (!/^\d+$/.test(numberStr)) {
+      return res.status(400).json({ message: 'Problem number must be a positive integer' });
+    }
+    
+    const problemNumber = parseInt(numberStr, 10);
+    
+    // Download the LeetCode questions dataset from a raw, reliable GitHub source
+    const datasetUrl = 'https://raw.githubusercontent.com/noworneverev/leetcode-api/main/data/leetcode_questions.json';
+    
+    console.log(`Fetching LeetCode problem data by number: ${problemNumber}...`);
+    
+    const response = await fetch(datasetUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch LeetCode dataset: ${response.statusText}`);
+    }
+    
+    const problemsList = await response.json();
+    
+    // Search for the question inside the list
+    // Robust key checks supporting various community JSON structures
+    const matched = problemsList.find(item => {
+      const id = item.question_id || item.questionId || item.frontend_id || item.id;
+      return id && parseInt(id, 10) === problemNumber;
+    });
+    
+    if (matched) {
+      // Keys matching the noworneverev/leetcode-api schema
+      const title = matched.title || matched.question_title || matched.questionTitle;
+      const slug = matched.title_slug || matched.question_title_slug || matched.questionTitleSlug || matched.slug;
+      const difficulty = matched.difficulty || 'Medium';
+      
+      const url = `https://leetcode.com/problems/${slug}/`;
+      
+      return res.json({
+        title,
+        difficulty,
+        url
+      });
+    } else {
+      return res.status(404).json({ message: `LeetCode problem #${problemNumber} not found in database.` });
+    }
+  } catch (error) {
+    console.error('Error fetching LeetCode problem:', error.message);
+    res.status(500).json({ message: 'Could not fetch LeetCode problem automatically.' });
+  }
+};
+
 module.exports = {
   addProblem,
   toggleSolved,
+  getLeetCodeProblemDetails,
 };
