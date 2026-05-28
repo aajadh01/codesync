@@ -6,7 +6,7 @@ const List = require('../models/List');
 // @access  Private
 const addProblem = async (req, res) => {
   try {
-    const { title, difficulty, url, listId } = req.body;
+    const { title, difficulty, url, listId, topic } = req.body;
 
     if (!title || !difficulty || !url || !listId) {
       return res.status(400).json({ message: 'All fields (title, difficulty, url, listId) are required' });
@@ -27,6 +27,25 @@ const addProblem = async (req, res) => {
       return res.status(403).json({ message: 'Access denied: You are not a member of this list' });
     }
 
+    // Format the topic (e.g. "sliding window" -> "Sliding Window", preserves acronyms like "DP")
+    let formattedTopic = 'General';
+    if (topic && topic.trim()) {
+      formattedTopic = topic
+        .trim()
+        .split(/\s+/)
+        .map((word) => {
+          const lower = word.toLowerCase();
+          if (lower === 'dp') return 'DP';
+          if (lower === 'dfs') return 'DFS';
+          if (lower === 'bfs') return 'BFS';
+          if (word.length <= 3 && word.toUpperCase() === word) {
+            return word;
+          }
+          return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+        })
+        .join(' ');
+    }
+
     // Create problem
     const problem = await Problem.create({
       title: title.trim(),
@@ -35,6 +54,7 @@ const addProblem = async (req, res) => {
       list: listId,
       addedBy: req.user._id,
       solvedBy: [], // Empty initially
+      topic: formattedTopic,
     });
 
     // Populate addedBy info to return to client

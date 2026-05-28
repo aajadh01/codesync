@@ -33,6 +33,11 @@ const problemSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    topic: {
+      type: String,
+      default: 'General',
+      trim: true,
+    },
   },
   {
     timestamps: true,

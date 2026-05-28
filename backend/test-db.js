@@ -63,7 +63,7 @@ async function runTests() {
     console.log(`✔ User B successfully added to list. Total members: ${listToJoin.members.length}`);
 
     // 4. Add Problems
-    console.log('\nStep 4: Adding LeetCode problems to the list...');
+    console.log('\nStep 4: Adding LeetCode problems to the list with custom topics...');
     const prob1 = await Problem.create({
       title: 'Two Sum',
       difficulty: 'Easy',
@@ -71,8 +71,9 @@ async function runTests() {
       list: list._id,
       addedBy: userA._id,
       solvedBy: [],
+      topic: 'General',
     });
-    console.log(`✔ Problem 1 added: "${prob1.title}" (${prob1.difficulty})`);
+    console.log(`✔ Problem 1 added: "${prob1.title}" (${prob1.difficulty}) under topic: "${prob1.topic}"`);
 
     const prob2 = await Problem.create({
       title: 'Course Schedule',
@@ -81,8 +82,9 @@ async function runTests() {
       list: list._id,
       addedBy: userA._id,
       solvedBy: [],
+      topic: 'Graphs',
     });
-    console.log(`✔ Problem 2 added: "${prob2.title}" (${prob2.difficulty})`);
+    console.log(`✔ Problem 2 added: "${prob2.title}" (${prob2.difficulty}) under topic: "${prob2.topic}"`);
 
     // 5. Track Solved States
     console.log('\nStep 5: Toggling solve status...');
