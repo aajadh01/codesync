@@ -95,51 +95,54 @@ const ListDetails = () => {
     fetchListDetails();
   }, [id]);
 
-  // Clean LeetCode url to auto-generate title or fetch automatically by number
+  // Clean LeetCode url to auto-generate title or fetch automatically by number/URL slug
   const handleProblemInputBlur = async () => {
     if (!problemInput.trim()) return;
 
     let input = problemInput.trim();
-    
-    // Check if it's a problem number
-    if (/^\d+$/.test(input)) {
-      setModalError('');
-      setModalLoading(true);
-      try {
-        const res = await api.get(`/problems/leetcode/${input}`);
-        setProblemTitle(res.data.title);
-        setProblemDifficulty(res.data.difficulty);
-        setProblemInput(res.data.url); // Convert number to full URL automatically!
-      } catch (err) {
-        console.error('Failed to fetch problem by number:', err);
-        // Fallback to basic placeholders if not found
-        if (!problemTitle) {
-          setProblemTitle(`Problem #${input}`);
-        }
-      } finally {
-        setModalLoading(false);
-      }
-      return;
-    }
+    let identifier = '';
+    let isUrl = false;
 
     // Check if it's a URL
     if (input.includes('leetcode.com/problems/')) {
       try {
-        // Extract the slug
-        // e.g. https://leetcode.com/problems/two-sum/description/
+        isUrl = true;
+        // Extract the slug (e.g. longest-substring-without-repeating-characters)
         const parts = input.split('leetcode.com/problems/')[1].split('/');
-        const slug = parts[0];
-        // Format slug to readable title
-        const formattedTitle = slug
-          .split('-')
-          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-          .join(' ');
-        
-        if (!problemTitle) {
-          setProblemTitle(formattedTitle);
-        }
+        identifier = parts[0];
       } catch (err) {
         console.error('Failed to parse URL', err);
+      }
+    } else if (/^\d+$/.test(input)) {
+      identifier = input;
+    }
+
+    if (identifier) {
+      setModalError('');
+      setModalLoading(true);
+      try {
+        const res = await api.get(`/problems/leetcode/${identifier}`);
+        setProblemTitle(res.data.title);
+        setProblemDifficulty(res.data.difficulty);
+        setProblemInput(res.data.url); // Standardize the field value to full LeetCode URL automatically!
+      } catch (err) {
+        console.error('Failed to fetch LeetCode problem details:', err);
+        if (isUrl) {
+          // Fallback to basic regex styling for slugs if the API lookup fails
+          const formattedTitle = identifier
+            .split('-')
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+          if (!problemTitle) {
+            setProblemTitle(formattedTitle);
+          }
+        } else {
+          if (!problemTitle) {
+            setProblemTitle(`Problem #${identifier}`);
+          }
+        }
+      } finally {
+        setModalLoading(false);
       }
     }
   };
@@ -786,6 +789,85 @@ const ListDetails = () => {
                   ))}
                 </div>
               </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Topic Category
+                </label>
+                <div className="grid grid-cols-2 gap-2 bg-[#0B0F19] p-1.5 rounded-lg border border-dark-border">
+                  <button
+                    key="General"
+                    type="button"
+                    onClick={() => setTopicType('General')}
+                    className={`py-1.5 rounded-md text-xs font-bold transition-all border ${
+                      topicType === 'General'
+                        ? 'bg-[#1F273E] text-indigo-400 border-indigo-500/20'
+                        : 'text-zinc-500 hover:text-zinc-350 border-transparent'
+                    }`}
+                  >
+                    General
+                  </button>
+                  <button
+                    key="Specific"
+                    type="button"
+                    onClick={() => setTopicType('Specific')}
+                    className={`py-1.5 rounded-md text-xs font-bold transition-all border ${
+                      topicType === 'Specific'
+                        ? 'bg-[#1F273E] text-indigo-400 border-indigo-500/20'
+                        : 'text-zinc-500 hover:text-zinc-350 border-transparent'
+                    }`}
+                  >
+                    Specific Topic
+                  </button>
+                </div>
+              </div>
+
+              {topicType === 'Specific' && (
+                <div className="space-y-2.5 animate-fade-in">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                      Topic Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Sliding Window, Graphs"
+                      value={customTopic}
+                      onChange={(e) => setCustomTopic(e.target.value)}
+                      className="w-full bg-[#0B0F19] border border-dark-border focus:border-indigo-500 focus:outline-none rounded-lg px-3.5 py-2.5 text-sm text-zinc-200"
+                    />
+                  </div>
+
+                  {/* Autocomplete Tags from Existing Custom Topics */}
+                  {existingTopics.length > 0 && (
+                    <div>
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1.5">
+                        Or select existing topic:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                        {existingTopics.map((topic) => {
+                          const colors = getTopicColors(topic);
+                          const isSelected = customTopic === topic;
+                          return (
+                            <button
+                              key={topic}
+                              type="button"
+                              onClick={() => setCustomTopic(topic)}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                                isSelected
+                                  ? `${colors.bg} ${colors.text} ${colors.border} ring-1 ${colors.border}`
+                                  : 'bg-[#0B0F19] text-zinc-400 border-dark-border hover:border-zinc-600 hover:text-zinc-200'
+                              }`}
+                            >
+                              {topic}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 type="submit"

@@ -115,17 +115,19 @@ const toggleSolved = async (req, res) => {
 // @access  Private
 const getLeetCodeProblemDetails = async (req, res) => {
   try {
-    const numberStr = req.params.number;
-    if (!/^\d+$/.test(numberStr)) {
-      return res.status(400).json({ message: 'Problem number must be a positive integer' });
+    const identifier = req.params.number.trim();
+    if (!identifier) {
+      return res.status(400).json({ message: 'Problem identifier (number or slug) is required' });
     }
-    
-    const problemNumber = parseInt(numberStr, 10);
+
+    const isNumber = /^\d+$/.test(identifier);
+    const problemNumber = isNumber ? parseInt(identifier, 10) : null;
+    const targetSlug = isNumber ? null : identifier.toLowerCase();
     
     // Download the LeetCode questions dataset from a raw, reliable GitHub source
     const datasetUrl = 'https://raw.githubusercontent.com/noworneverev/leetcode-api/main/data/leetcode_questions.json';
     
-    console.log(`Fetching LeetCode problem data by number: ${problemNumber}...`);
+    console.log(`Fetching LeetCode problem data by identifier: ${identifier}...`);
     
     const response = await fetch(datasetUrl);
     if (!response.ok) {
@@ -135,14 +137,17 @@ const getLeetCodeProblemDetails = async (req, res) => {
     const problemsList = await response.json();
     
     // Search for the question inside the list
-    // Robust key checks supporting various community JSON structures
     const matched = problemsList.find(item => {
-      const id = item.question_id || item.questionId || item.frontend_id || item.id;
-      return id && parseInt(id, 10) === problemNumber;
+      if (isNumber) {
+        const id = item.question_id || item.questionId || item.frontend_id || item.id;
+        return id && parseInt(id, 10) === problemNumber;
+      } else {
+        const slug = item.title_slug || item.question_title_slug || item.questionTitleSlug || item.slug || '';
+        return slug.toLowerCase() === targetSlug;
+      }
     });
     
     if (matched) {
-      // Keys matching the noworneverev/leetcode-api schema
       const title = matched.title || matched.question_title || matched.questionTitle;
       const slug = matched.title_slug || matched.question_title_slug || matched.questionTitleSlug || matched.slug;
       const difficulty = matched.difficulty || 'Medium';
@@ -155,7 +160,7 @@ const getLeetCodeProblemDetails = async (req, res) => {
         url
       });
     } else {
-      return res.status(404).json({ message: `LeetCode problem #${problemNumber} not found in database.` });
+      return res.status(404).json({ message: `LeetCode problem "${identifier}" not found in database.` });
     }
   } catch (error) {
     console.error('Error fetching LeetCode problem:', error.message);
