@@ -136,23 +136,26 @@ const getLeetCodeProblemDetails = async (req, res) => {
     
     const problemsList = await response.json();
     
-    // Search for the question inside the list
+    // Search for the question inside the list supporting flat and nested structures
     const matched = problemsList.find(item => {
+      const q = item.data?.question || item.question || item;
       if (isNumber) {
-        const id = item.question_id || item.questionId || item.frontend_id || item.id;
+        const id = q.questionFrontendId || q.question_id || q.questionId || q.frontend_id || q.id;
         return id && parseInt(id, 10) === problemNumber;
       } else {
-        const slug = item.title_slug || item.question_title_slug || item.questionTitleSlug || item.slug || '';
+        const slug = q.titleSlug || q.questionTitleSlug || q.title_slug || q.question_title_slug || q.slug || '';
         return slug.toLowerCase() === targetSlug;
       }
     });
     
     if (matched) {
-      const title = matched.title || matched.question_title || matched.questionTitle;
-      const slug = matched.title_slug || matched.question_title_slug || matched.questionTitleSlug || matched.slug;
-      const difficulty = matched.difficulty || 'Medium';
+      const q = matched.data?.question || matched.question || matched;
       
-      const url = `https://leetcode.com/problems/${slug}/`;
+      const title = q.title || q.question_title || q.questionTitle;
+      const slug = q.titleSlug || q.questionTitleSlug || q.title_slug || q.question_title_slug || q.slug;
+      const difficulty = q.difficulty || 'Medium';
+      
+      const url = q.url || `https://leetcode.com/problems/${slug}/`;
       
       return res.json({
         title,
