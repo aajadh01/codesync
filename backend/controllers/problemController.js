@@ -1,6 +1,26 @@
 const Problem = require('../models/Problem');
 const List = require('../models/List');
 
+// Helper to normalize LeetCode URLs for duplicate checking
+const normalizeUrl = (urlStr) => {
+  if (!urlStr) return '';
+  let clean = urlStr.trim().toLowerCase();
+  
+  // Remove protocol
+  clean = clean.replace(/^(https?:\/\/)?(www\.)?/, '');
+  
+  // Remove trailing slashes
+  clean = clean.replace(/\/+$/, '');
+  
+  // Remove trailing suffixes like /description, /submissions, /solutions, /discuss
+  clean = clean.replace(/\/(description|submissions|solutions|discuss)$/, '');
+  
+  // Remove trailing slashes again just in case
+  clean = clean.replace(/\/+$/, '');
+  
+  return clean;
+};
+
 // @desc    Add a problem to a shared list
 // @route   POST /api/problems
 // @access  Private
@@ -25,6 +45,21 @@ const addProblem = async (req, res) => {
     const isMember = list.members.includes(req.user._id);
     if (!isMember) {
       return res.status(403).json({ message: 'Access denied: You are not a member of this list' });
+    }
+
+    // Check if the problem already exists in this list (by normalized URL or title)
+    const normalizedNew = normalizeUrl(url);
+    const titleNew = title.trim().toLowerCase();
+
+    const existingProblems = await Problem.find({ list: listId });
+    const isDuplicate = existingProblems.some((prob) => {
+      const normExisting = normalizeUrl(prob.url);
+      const titleExisting = prob.title.trim().toLowerCase();
+      return normExisting === normalizedNew || titleExisting === titleNew;
+    });
+
+    if (isDuplicate) {
+      return res.status(400).json({ message: 'This problem is already present in this list.' });
     }
 
     // Format the topic (e.g. "sliding window" -> "Sliding Window", preserves acronyms like "DP")
