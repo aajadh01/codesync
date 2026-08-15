@@ -1,0 +1,2 @@
+rootProject.name = "codesync-android"
+include ":app"

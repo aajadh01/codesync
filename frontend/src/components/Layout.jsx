@@ -2,6 +2,7 @@ import React, { useContext, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import Avatar from './Avatar';
+import MobileDownloadButton from './MobileDownloadButton';
 import {
   LayoutDashboard,
   ListTodo,
@@ -187,6 +188,7 @@ const Layout = ({ children }) => {
             )}
           </div>
         </header>
+        <MobileDownloadButton />
 
         {/* Content Box */}
         <main className="flex-1 overflow-y-auto bg-dark-base p-6 md:p-8">
