@@ -1,0 +1,6 @@
+* text=auto               # let Git treat all text files as text
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.svg  binary
+*.apk  binary
