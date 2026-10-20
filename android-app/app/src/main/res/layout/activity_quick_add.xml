@@ -177,29 +177,74 @@
                 android:buttonTint="@color/diff_hard" />
         </RadioGroup>
 
-        <!-- Topic -->
+        <!-- Topic Selection: General vs Specific Topic -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Topic (Optional)"
+            android:text="Topic Type *"
             android:textColor="@color/text_muted"
             android:textSize="12sp"
             android:textStyle="bold"
-            android:layout_marginBottom="4dp" />
+            android:layout_marginBottom="6dp" />
 
-        <EditText
-            android:id="@+id/et_topic"
+        <RadioGroup
+            android:id="@+id/rg_topic_type"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="@drawable/bg_card"
-            android:hint="e.g. Arrays, Dynamic Programming"
-            android:inputType="textCapWords"
-            android:textColor="@color/text_white"
-            android:textColorHint="@color/text_muted"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:textSize="14sp"
-            android:layout_marginBottom="24dp" />
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="10dp">
+
+            <RadioButton
+                android:id="@+id/rb_topic_general"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="General"
+                android:textColor="@color/text_white"
+                android:buttonTint="@color/accent" />
+
+            <RadioButton
+                android:id="@+id/rb_topic_specific"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Specific Topic"
+                android:textColor="@color/text_white"
+                android:buttonTint="@color/accent" />
+        </RadioGroup>
+
+        <!-- Specific Topic Input (shown only when Specific Topic is selected) -->
+        <LinearLayout
+            android:id="@+id/layout_specific_topic"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:layout_marginBottom="14dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Topic Name *"
+                android:textColor="@color/text_muted"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp" />
+
+            <EditText
+                android:id="@+id/et_topic"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_card"
+                android:hint="e.g. Sliding Window, Graphs, DP"
+                android:inputType="textCapWords"
+                android:textColor="@color/text_white"
+                android:textColorHint="@color/text_muted"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textSize="14sp" />
+        </LinearLayout>
 
         <!-- Submit Button -->
         <Button

@@ -8,7 +8,9 @@ import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.Spinner
 import android.widget.TextView
@@ -34,6 +36,10 @@ class QuickAddActivity : AppCompatActivity() {
     private lateinit var tvFetchStatus: TextView
     private lateinit var etTitle: EditText
     private lateinit var rgDifficulty: RadioGroup
+    private lateinit var rgTopicType: RadioGroup
+    private lateinit var rbTopicGeneral: RadioButton
+    private lateinit var rbTopicSpecific: RadioButton
+    private lateinit var layoutSpecificTopic: LinearLayout
     private lateinit var etTopic: EditText
     private lateinit var btnSubmit: Button
     private lateinit var pbLoading: ProgressBar
@@ -41,6 +47,7 @@ class QuickAddActivity : AppCompatActivity() {
     private var lists = listOf<ListSummary>()
     private var preselectedListId: String? = null
     private var autoFetchJob: Job? = null
+    private var resolvedUrl: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,9 +73,23 @@ class QuickAddActivity : AppCompatActivity() {
         tvFetchStatus = findViewById(R.id.tv_fetch_status)
         etTitle = findViewById(R.id.et_title)
         rgDifficulty = findViewById(R.id.rg_difficulty)
+        rgTopicType = findViewById(R.id.rg_topic_type)
+        rbTopicGeneral = findViewById(R.id.rb_topic_general)
+        rbTopicSpecific = findViewById(R.id.rb_topic_specific)
+        layoutSpecificTopic = findViewById(R.id.layout_specific_topic)
         etTopic = findViewById(R.id.et_topic)
         btnSubmit = findViewById(R.id.btn_submit)
         pbLoading = findViewById(R.id.pb_loading)
+
+        // Topic Type toggle logic (General vs Specific Topic)
+        rgTopicType.setOnCheckedChangeListener { _, checkedId ->
+            if (checkedId == R.id.rb_topic_specific) {
+                layoutSpecificTopic.visibility = View.VISIBLE
+                etTopic.requestFocus()
+            } else {
+                layoutSpecificTopic.visibility = View.GONE
+            }
+        }
 
         // Manual Fetch button
         btnFetch.setOnClickListener {
@@ -80,23 +101,35 @@ class QuickAddActivity : AppCompatActivity() {
             }
         }
 
-        // Auto-fetch on input change (debounced 750ms)
+        // Auto-fetch on input change (debounced 800ms) without replacing the text user is typing
         etUrl.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 val input = s?.toString()?.trim() ?: return
+                resolvedUrl = null // Reset resolved URL when user edits input
+
                 if (input.isEmpty()) {
                     tvFetchStatus.text = "Enter a LeetCode problem number to auto-fill details"
                     tvFetchStatus.setTextColor(getColor(R.color.text_muted))
+                    autoFetchJob?.cancel()
+                    return
+                }
+
+                // If user is typing digits and only has 1 digit, don't rush auto-fetch
+                if (input.all { it.isDigit() } && input.length < 2) {
+                    tvFetchStatus.text = "Type problem number and pause, or tap Fetch"
+                    tvFetchStatus.setTextColor(getColor(R.color.text_muted))
+                    autoFetchJob?.cancel()
                     return
                 }
 
                 autoFetchJob?.cancel()
                 autoFetchJob = CoroutineScope(Dispatchers.Main).launch {
-                    delay(750)
-                    if (input.isNotEmpty() && !isFinishing) {
-                        fetchLeetCodeDetails(input, andSubmit = false)
+                    delay(800)
+                    val currentText = etUrl.text.toString().trim()
+                    if (currentText == input && currentText.isNotEmpty() && !isFinishing) {
+                        fetchLeetCodeDetails(currentText, andSubmit = false)
                     }
                 }
             }
@@ -117,11 +150,19 @@ class QuickAddActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             val result = ApiClient.getLeetCodeDetails(this@QuickAddActivity, query)
             CoroutineScope(Dispatchers.Main).launch {
+                // Ensure current input still matches what we fetched
+                val currentInput = etUrl.text.toString().trim()
+                if (!andSubmit && extractProblemIdentifier(currentInput) != query && currentInput.isNotEmpty()) {
+                    return@launch
+                }
+
                 if (result.isSuccess) {
                     val details = result.getOrNull()!!
+                    resolvedUrl = details.url
                     etTitle.setText(details.title)
-                    etUrl.setText(details.url)
-                    etTopic.setText(details.topic)
+
+                    // Note: We deliberately DO NOT call etUrl.setText(details.url) here
+                    // so the user's typed number or text is never overwritten while typing!
 
                     when (details.difficulty) {
                         "Easy" -> rgDifficulty.check(R.id.rb_easy)
@@ -129,11 +170,26 @@ class QuickAddActivity : AppCompatActivity() {
                         else -> rgDifficulty.check(R.id.rb_medium)
                     }
 
-                    tvFetchStatus.text = "✓ Found: ${details.title} (${details.difficulty}, ${details.topic})"
+                    // Auto-fill topic if specific
+                    if (details.topic.isNotBlank() && !details.topic.equals("General", ignoreCase = true)) {
+                        rbTopicSpecific.isChecked = true
+                        layoutSpecificTopic.visibility = View.VISIBLE
+                        etTopic.setText(details.topic)
+                    } else if (rbTopicGeneral.isChecked) {
+                        layoutSpecificTopic.visibility = View.GONE
+                        etTopic.setText("")
+                    }
+
+                    tvFetchStatus.text = "✓ Found: #${details.id} ${details.title} (${details.difficulty})"
                     tvFetchStatus.setTextColor(getColor(R.color.diff_easy))
 
                     if (andSubmit) {
-                        executeAdd(details.title, details.difficulty, details.url, details.topic)
+                        val topic = if (rbTopicSpecific.isChecked) {
+                            etTopic.text.toString().trim().ifEmpty { "General" }
+                        } else {
+                            "General"
+                        }
+                        executeAdd(details.title, details.difficulty, details.url, topic)
                     }
                 } else {
                     val err = result.exceptionOrNull()?.message ?: "Problem not found"
@@ -210,7 +266,7 @@ class QuickAddActivity : AppCompatActivity() {
         }
 
         val rawInput = etUrl.text.toString().trim()
-        var title = etTitle.text.toString().trim()
+        val title = etTitle.text.toString().trim()
 
         if (rawInput.isEmpty() && title.isEmpty()) {
             etUrl.error = "Enter a LeetCode problem number or URL"
@@ -231,7 +287,7 @@ class QuickAddActivity : AppCompatActivity() {
             else -> "Medium"
         }
 
-        val finalUrl = if (rawInput.contains("leetcode.com")) {
+        val finalUrl = resolvedUrl ?: if (rawInput.contains("leetcode.com")) {
             rawInput
         } else if (rawInput.isNotEmpty() && rawInput.all { it.isDigit() }) {
             "https://leetcode.com/problemset/all/?search=$rawInput"
@@ -239,7 +295,12 @@ class QuickAddActivity : AppCompatActivity() {
             "https://leetcode.com/problems/${extractProblemIdentifier(rawInput)}/"
         }
 
-        val topic = etTopic.text.toString().trim().ifEmpty { "General" }
+        val topic = if (rbTopicSpecific.isChecked) {
+            etTopic.text.toString().trim().ifEmpty { "General" }
+        } else {
+            "General"
+        }
+
         executeAdd(title, difficulty, finalUrl, topic)
     }
 
