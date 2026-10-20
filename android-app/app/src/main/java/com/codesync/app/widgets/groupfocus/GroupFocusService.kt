@@ -27,7 +27,7 @@ class GroupFocusViewsFactory(
         android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
     ).let {
         if (it != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) it
-        else intent.data?.lastPathSegment?.toIntOrNull() ?: android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
+        else intent.data?.pathSegments?.getOrNull(2)?.toIntOrNull() ?: android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
     }
 
     private val pendingProblems = mutableListOf<ProblemItem>()
@@ -51,11 +51,45 @@ class GroupFocusViewsFactory(
         }
 
         if (listId != null) {
+            // 1. FAST PATH: First check cache for instant render (avoids binder timeout)
+            val cached = AuthStorage.getWidgetCache(context, "gf_$listId")
+            if (!cached.isNullOrEmpty()) {
+                try {
+                    val obj = JSONObject(cached)
+                    val arr = obj.optJSONArray("problems") ?: JSONArray()
+                    val loaded = mutableListOf<ProblemItem>()
+                    for (i in 0 until arr.length()) {
+                        val pObj = arr.getJSONObject(i)
+                        loaded.add(
+                            ProblemItem(
+                                id = pObj.getString("id"),
+                                title = pObj.getString("title"),
+                                difficulty = pObj.optString("difficulty", "Medium"),
+                                url = pObj.optString("url", "https://leetcode.com"),
+                                topic = pObj.optString("topic", "General"),
+                                isSolved = pObj.optBoolean("isSolved", false)
+                            )
+                        )
+                    }
+
+                    if (loaded.isNotEmpty()) {
+                        pendingProblems.clear()
+                        val pending = loaded.filter { !it.isSolved }
+                        if (pending.isNotEmpty()) {
+                            pendingProblems.addAll(pending)
+                        } else {
+                            pendingProblems.addAll(loaded)
+                        }
+                        return
+                    }
+                } catch (ignored: Exception) {}
+            }
+
+            // 2. SLOW PATH: If cache was completely empty, fetch synchronously
             val result = ApiClient.getListDetails(context, listId)
             if (result.isSuccess) {
                 val data = result.getOrNull()!!
                 pendingProblems.clear()
-                // Show pending (unsolved) problems first
                 val pending = data.problems.filter { !it.isSolved }
                 if (pending.isNotEmpty()) {
                     pendingProblems.addAll(pending)
@@ -63,14 +97,14 @@ class GroupFocusViewsFactory(
                     pendingProblems.addAll(data.problems)
                 }
 
-                // Cache metadata
+                // Cache metadata & problems
                 try {
                     val obj = JSONObject().apply {
                         put("totalProblems", data.totalProblems)
                         put("solvedCount", data.solvedCount)
                         put("completionPercentage", data.completionPercentage)
                         val arr = JSONArray()
-                        for (p in pendingProblems) {
+                        for (p in data.problems) {
                             arr.put(
                                 JSONObject().apply {
                                     put("id", p.id)
@@ -86,29 +120,6 @@ class GroupFocusViewsFactory(
                     }
                     AuthStorage.saveWidgetCache(context, "gf_$listId", obj.toString())
                 } catch (ignored: Exception) {}
-            } else {
-                // Offline fallback
-                val cached = AuthStorage.getWidgetCache(context, "gf_$listId")
-                if (!cached.isNullOrEmpty()) {
-                    try {
-                        val obj = JSONObject(cached)
-                        val arr = obj.optJSONArray("problems") ?: JSONArray()
-                        pendingProblems.clear()
-                        for (i in 0 until arr.length()) {
-                            val pObj = arr.getJSONObject(i)
-                            pendingProblems.add(
-                                ProblemItem(
-                                    id = pObj.getString("id"),
-                                    title = pObj.getString("title"),
-                                    difficulty = pObj.optString("difficulty", "Medium"),
-                                    url = pObj.optString("url", "https://leetcode.com"),
-                                    topic = pObj.optString("topic", "General"),
-                                    isSolved = pObj.optBoolean("isSolved", false)
-                                )
-                            )
-                        }
-                    } catch (ignored: Exception) {}
-                }
             }
         }
     }

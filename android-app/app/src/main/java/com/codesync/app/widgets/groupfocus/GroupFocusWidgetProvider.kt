@@ -18,6 +18,8 @@ import com.codesync.app.widgets.quickadd.QuickAddActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 class GroupFocusWidgetProvider : AppWidgetProvider() {
@@ -33,127 +35,289 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
         ) {
             val views = RemoteViews(context.packageName, R.layout.widget_group_focus)
 
-        val listId = AuthStorage.getWidgetListId(context, appWidgetId)
-        val listName = AuthStorage.getWidgetListName(context, appWidgetId) ?: "Group Focus"
-        views.setTextViewText(R.id.tv_group_name, listName)
+            val listId = AuthStorage.getWidgetListId(context, appWidgetId)
+            val listName = AuthStorage.getWidgetListName(context, appWidgetId) ?: "Group Focus"
+            views.setTextViewText(R.id.tv_group_name, listName)
 
-        val isLoggedIn = AuthStorage.isLoggedIn(context)
-        if (!isLoggedIn) {
-            views.setViewVisibility(R.id.tv_unauth_banner, View.VISIBLE)
-            val loginIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            val isLoggedIn = AuthStorage.isLoggedIn(context)
+            if (!isLoggedIn) {
+                views.setViewVisibility(R.id.tv_unauth_banner, View.VISIBLE)
+                val loginIntent = Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+                val loginPi = PendingIntent.getActivity(
+                    context,
+                    appWidgetId,
+                    loginIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                views.setOnClickPendingIntent(R.id.tv_unauth_banner, loginPi)
+            } else {
+                views.setViewVisibility(R.id.tv_unauth_banner, View.GONE)
             }
-            val loginPi = PendingIntent.getActivity(
+
+            // Immediately apply cached stats if available
+            if (listId != null) {
+                val cached = AuthStorage.getWidgetCache(context, "gf_$listId")
+                if (!cached.isNullOrEmpty()) {
+                    try {
+                        val obj = JSONObject(cached)
+                        val solved = obj.optInt("solvedCount", 0)
+                        val total = obj.optInt("totalProblems", 0)
+                        val pct = obj.optInt("completionPercentage", 0)
+                        views.setTextViewText(R.id.tv_progress_stats, "$solved of $total Solved ($pct%)")
+                        views.setProgressBar(R.id.pb_completion, 100, pct, false)
+                    } catch (ignored: Exception) {}
+                }
+            }
+
+            // Set up RemoteViewsService Adapter for ListView with unique URI
+            val serviceIntent = Intent(context, GroupFocusService::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                this.data = Uri.parse("codesync://widget/groupfocus/$appWidgetId/${System.currentTimeMillis()}")
+            }
+            views.setRemoteAdapter(R.id.lv_pending_problems, serviceIntent)
+            views.setEmptyView(R.id.lv_pending_problems, R.id.tv_empty)
+
+            // PendingIntent template for ListView item clicks
+            val itemClickIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
+                action = ACTION_ITEM_CLICK
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                putExtra("EXTRA_APPWIDGET_ID", appWidgetId)
+            }
+            val itemClickPi = PendingIntent.getBroadcast(
                 context,
                 appWidgetId,
-                loginIntent,
+                itemClickIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            views.setPendingIntentTemplate(R.id.lv_pending_problems, itemClickPi)
+
+            // Refresh Action
+            val refreshIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
+                action = ACTION_REFRESH
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+            val refreshPi = PendingIntent.getBroadcast(
+                context,
+                appWidgetId + 4000,
+                refreshIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            views.setOnClickPendingIntent(R.id.tv_unauth_banner, loginPi)
-        } else {
-            views.setViewVisibility(R.id.tv_unauth_banner, View.GONE)
+            views.setOnClickPendingIntent(R.id.btn_refresh, refreshPi)
+
+            // Quick Add Action
+            val addIntent = Intent(context, QuickAddActivity::class.java).apply {
+                putExtra("EXTRA_TARGET_LIST_ID", listId)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val addPi = PendingIntent.getActivity(
+                context,
+                appWidgetId + 5000,
+                addIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.btn_quick_add, addPi)
+
+            // Open List Action
+            val openListIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val openListPi = PendingIntent.getActivity(
+                context,
+                appWidgetId + 6000,
+                openListIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.btn_open_list, openListPi)
+
+            // Config Action
+            val configIntent = Intent(context, GroupFocusConfigureActivity::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            val configPi = PendingIntent.getActivity(
+                context,
+                appWidgetId + 7000,
+                configIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.btn_config, configPi)
+
+            appWidgetManager.updateAppWidget(appWidgetId, views)
         }
 
-        // Read cached stats for immediate display
-        if (listId != null) {
-            val cached = AuthStorage.getWidgetCache(context, "gf_$listId")
-            if (!cached.isNullOrEmpty()) {
+        // Asynchronously fetch fresh data from server, cache it, and push updates immediately
+        fun fetchAndUpdateWidget(
+            context: Context,
+            appWidgetId: Int,
+            onComplete: (() -> Unit)? = null
+        ) {
+            val appWidgetManager = AppWidgetManager.getInstance(context)
+            // 1. Immediately render current/cached view
+            updateAppWidget(context, appWidgetManager, appWidgetId)
+
+            if (!AuthStorage.isLoggedIn(context)) {
+                onComplete?.invoke()
+                return
+            }
+
+            CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val obj = JSONObject(cached)
-                    val solved = obj.optInt("solvedCount", 0)
-                    val total = obj.optInt("totalProblems", 0)
-                    val pct = obj.optInt("completionPercentage", 0)
-                    views.setTextViewText(R.id.tv_progress_stats, "$solved of $total Solved ($pct%)")
-                    views.setProgressBar(R.id.pb_completion, 100, pct, false)
-                } catch (ignored: Exception) {}
+                    var listId = AuthStorage.getWidgetListId(context, appWidgetId)
+                    var listName = AuthStorage.getWidgetListName(context, appWidgetId)
+
+                    // If no list assigned, discover user's first list automatically
+                    if (listId.isNullOrEmpty()) {
+                        val listsResult = ApiClient.getUserLists(context)
+                        if (listsResult.isSuccess && listsResult.getOrNull()?.isNotEmpty() == true) {
+                            val firstList = listsResult.getOrNull()!![0]
+                            listId = firstList.id
+                            listName = firstList.name
+                            AuthStorage.setWidgetListId(context, appWidgetId, listId, listName)
+                        }
+                    }
+
+                    if (listId != null) {
+                        val detailResult = ApiClient.getListDetails(context, listId)
+                        if (detailResult.isSuccess) {
+                            val listDetails = detailResult.getOrNull()!!
+                            listName = listDetails.name
+                            AuthStorage.setWidgetListId(context, appWidgetId, listId, listName)
+
+                            // Save full cache
+                            val obj = JSONObject().apply {
+                                put("totalProblems", listDetails.totalProblems)
+                                put("solvedCount", listDetails.solvedCount)
+                                put("completionPercentage", listDetails.completionPercentage)
+                                val arr = JSONArray()
+                                for (p in listDetails.problems) {
+                                    arr.put(
+                                        JSONObject().apply {
+                                            put("id", p.id)
+                                            put("title", p.title)
+                                            put("difficulty", p.difficulty)
+                                            put("url", p.url)
+                                            put("topic", p.topic)
+                                            put("isSolved", p.isSolved)
+                                        }
+                                    )
+                                }
+                                put("problems", arr)
+                            }
+                            AuthStorage.saveWidgetCache(context, "gf_$listId", obj.toString())
+
+                            // Push updated view on Main thread
+                            withContext(Dispatchers.Main) {
+                                val views = RemoteViews(context.packageName, R.layout.widget_group_focus)
+                                views.setTextViewText(R.id.tv_group_name, listName)
+                                views.setTextViewText(
+                                    R.id.tv_progress_stats,
+                                    "${listDetails.solvedCount} of ${listDetails.totalProblems} Solved (${listDetails.completionPercentage}%)"
+                                )
+                                views.setProgressBar(R.id.pb_completion, 100, listDetails.completionPercentage, false)
+                                views.setViewVisibility(R.id.tv_unauth_banner, View.GONE)
+
+                                // Connect adapter with fresh timestamp to force reload
+                                val serviceIntent = Intent(context, GroupFocusService::class.java).apply {
+                                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                                    this.data = Uri.parse("codesync://widget/groupfocus/$appWidgetId/${System.currentTimeMillis()}")
+                                }
+                                views.setRemoteAdapter(R.id.lv_pending_problems, serviceIntent)
+                                views.setEmptyView(R.id.lv_pending_problems, R.id.tv_empty)
+
+                                // Item click PendingIntent template
+                                val itemClickIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
+                                    action = ACTION_ITEM_CLICK
+                                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                                }
+                                val itemClickPi = PendingIntent.getBroadcast(
+                                    context,
+                                    appWidgetId,
+                                    itemClickIntent,
+                                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                                )
+                                views.setPendingIntentTemplate(R.id.lv_pending_problems, itemClickPi)
+
+                                // Refresh action
+                                val refreshIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
+                                    action = ACTION_REFRESH
+                                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                                }
+                                val refreshPi = PendingIntent.getBroadcast(
+                                    context,
+                                    appWidgetId + 4000,
+                                    refreshIntent,
+                                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                                )
+                                views.setOnClickPendingIntent(R.id.btn_refresh, refreshPi)
+
+                                // Quick Add action
+                                val addIntent = Intent(context, QuickAddActivity::class.java).apply {
+                                    putExtra("EXTRA_TARGET_LIST_ID", listId)
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                }
+                                val addPi = PendingIntent.getActivity(
+                                    context,
+                                    appWidgetId + 5000,
+                                    addIntent,
+                                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                                )
+                                views.setOnClickPendingIntent(R.id.btn_quick_add, addPi)
+
+                                // Open List action
+                                val openListIntent = Intent(context, MainActivity::class.java).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                }
+                                val openListPi = PendingIntent.getActivity(
+                                    context,
+                                    appWidgetId + 6000,
+                                    openListIntent,
+                                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                                )
+                                views.setOnClickPendingIntent(R.id.btn_open_list, openListPi)
+
+                                // Config action
+                                val configIntent = Intent(context, GroupFocusConfigureActivity::class.java).apply {
+                                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                val configPi = PendingIntent.getActivity(
+                                    context,
+                                    appWidgetId + 7000,
+                                    configIntent,
+                                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                                )
+                                views.setOnClickPendingIntent(R.id.btn_config, configPi)
+
+                                appWidgetManager.updateAppWidget(appWidgetId, views)
+                                appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_pending_problems)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    onComplete?.invoke()
+                }
             }
         }
-
-        // Set up RemoteViewsService Adapter for ListView
-        val serviceIntent = Intent(context, GroupFocusService::class.java).apply {
-            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            data = Uri.parse("codesync://widget/groupfocus/$appWidgetId")
-        }
-        views.setRemoteAdapter(R.id.lv_pending_problems, serviceIntent)
-        views.setEmptyView(R.id.lv_pending_problems, R.id.tv_empty)
-
-        // PendingIntent template for ListView item clicks
-        val itemClickIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
-            action = ACTION_ITEM_CLICK
-            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            putExtra("EXTRA_APPWIDGET_ID", appWidgetId)
-        }
-        val itemClickPi = PendingIntent.getBroadcast(
-            context,
-            appWidgetId,
-            itemClickIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-        )
-        views.setPendingIntentTemplate(R.id.lv_pending_problems, itemClickPi)
-
-        // Refresh Action
-        val refreshIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
-            action = ACTION_REFRESH
-            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        }
-        val refreshPi = PendingIntent.getBroadcast(
-            context,
-            appWidgetId + 4000,
-            refreshIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        views.setOnClickPendingIntent(R.id.btn_refresh, refreshPi)
-
-        // Quick Add Action
-        val addIntent = Intent(context, QuickAddActivity::class.java).apply {
-            putExtra("EXTRA_TARGET_LIST_ID", listId)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val addPi = PendingIntent.getActivity(
-            context,
-            appWidgetId + 5000,
-            addIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        views.setOnClickPendingIntent(R.id.btn_quick_add, addPi)
-
-        // Open List Action
-        val openListIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val openListPi = PendingIntent.getActivity(
-            context,
-            appWidgetId + 6000,
-            openListIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        views.setOnClickPendingIntent(R.id.btn_open_list, openListPi)
-
-        // Config Action
-        val configIntent = Intent(context, GroupFocusConfigureActivity::class.java).apply {
-            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        val configPi = PendingIntent.getActivity(
-            context,
-            appWidgetId + 7000,
-            configIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        views.setOnClickPendingIntent(R.id.btn_config, configPi)
-
-        appWidgetManager.updateAppWidget(appWidgetId, views)
-        appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_pending_problems)
     }
-}
 
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        for (appWidgetId in appWidgetIds) {
-            updateAppWidget(context, appWidgetManager, appWidgetId)
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                for (appWidgetId in appWidgetIds) {
+                    fetchAndUpdateWidget(context, appWidgetId)
+                }
+            } finally {
+                pendingResult.finish()
+            }
         }
         super.onUpdate(context, appWidgetManager, appWidgetIds)
     }
@@ -183,15 +347,13 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
                         CoroutineScope(Dispatchers.IO).launch {
                             try {
                                 val result = ApiClient.toggleProblemSolve(context, problemId)
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    if (result.isSuccess) {
-                                        val appWidgetManager = AppWidgetManager.getInstance(context)
-                                        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-                                            appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_pending_problems)
-                                            updateAppWidget(context, appWidgetManager, appWidgetId)
-                                        }
-                                        WidgetSyncWorker.enqueueImmediateSync(context)
-                                    } else {
+                                if (result.isSuccess) {
+                                    if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                                        fetchAndUpdateWidget(context, appWidgetId)
+                                    }
+                                    WidgetSyncWorker.enqueueImmediateSync(context)
+                                } else {
+                                    withContext(Dispatchers.Main) {
                                         Toast.makeText(
                                             context,
                                             result.exceptionOrNull()?.message ?: "Failed to update",
@@ -222,9 +384,11 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
             ACTION_REFRESH -> {
                 val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
                 if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-                    val appWidgetManager = AppWidgetManager.getInstance(context)
-                    appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_pending_problems)
-                    updateAppWidget(context, appWidgetManager, appWidgetId)
+                    Toast.makeText(context, "Syncing Group Focus...", Toast.LENGTH_SHORT).show()
+                    val pendingResult = goAsync()
+                    fetchAndUpdateWidget(context, appWidgetId) {
+                        pendingResult.finish()
+                    }
                 }
             }
         }

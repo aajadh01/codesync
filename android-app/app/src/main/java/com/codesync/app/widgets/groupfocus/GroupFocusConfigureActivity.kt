@@ -101,9 +101,8 @@ class GroupFocusConfigureActivity : AppCompatActivity() {
             val selected = lists[position]
             AuthStorage.setWidgetListId(this, appWidgetId, selected.id, selected.name)
 
-            // Directly push RemoteViews update before returning
-            val appWidgetManager = AppWidgetManager.getInstance(this)
-            GroupFocusWidgetProvider.updateAppWidget(this, appWidgetManager, appWidgetId)
+            // Asynchronously fetch fresh problems and push RemoteViews update
+            GroupFocusWidgetProvider.fetchAndUpdateWidget(this, appWidgetId)
 
             val resultValue = Intent().apply {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
