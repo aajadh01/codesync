@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Code2, Users, Trophy, Sparkles, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Code2, Users, Trophy, Sparkles, CheckCircle2, ChevronRight, Smartphone, Download } from 'lucide-react';
 
 const Landing = () => {
   return (
@@ -17,12 +17,22 @@ const Landing = () => {
             CODESYNC
           </span>
         </div>
-        <Link
-          to="/auth"
-          className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all duration-200 shadow-lg shadow-indigo-600/20"
-        >
-          Sign In
-        </Link>
+        <div className="flex items-center gap-3">
+          <a
+            href="/codesync.apk"
+            download="codesync.apk"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-dark-card hover:bg-[#1E2943] text-zinc-300 border border-dark-border transition-colors duration-200"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+            Android App
+          </a>
+          <Link
+            to="/auth"
+            className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all duration-200 shadow-lg shadow-indigo-600/20"
+          >
+            Sign In
+          </Link>
+        </div>
       </header>
 
       {/* Hero Section */}
@@ -56,10 +66,12 @@ const Landing = () => {
             <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </Link>
           <a
-            href="#features"
-            className="px-8 py-4 bg-dark-card hover:bg-[#1E2943] text-zinc-300 rounded-xl font-semibold border border-dark-border transition-colors duration-200"
+            href="/codesync.apk"
+            download="codesync.apk"
+            className="flex items-center justify-center gap-2 px-6 py-4 bg-dark-card hover:bg-[#1E2943] text-zinc-200 rounded-xl font-semibold border border-indigo-500/30 transition-colors duration-200 active:scale-95 shadow-lg shadow-black/20"
           >
-            Learn More
+            <Smartphone className="w-5 h-5 text-indigo-400" />
+            <span>Download APK <span className="text-xs text-zinc-400 font-normal">(v1.0.0 • 4.5 MB)</span></span>
           </a>
         </div>
 

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CodeSync</string>
+    <string name="loading_message">Connecting to CodeSync…</string>
+    <string name="error_connection_title">Unable to Connect</string>
+    <string name="error_connection_desc">Could not reach the CodeSync server. Please verify your internet connection or check the server status.</string>
+    <string name="btn_retry">Retry Connection</string>
+    <string name="btn_change_server">Configure Server</string>
+    <string name="dialog_server_title">CodeSync Server URL</string>
+    <string name="dialog_server_message">Enter the backend or web server URL for CodeSync:</string>
+    <string name="btn_save">Save &amp; Reload</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="exit_toast">Press back again to exit CodeSync</string>
+</resources>
