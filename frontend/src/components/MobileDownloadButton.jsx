@@ -1,14 +1,78 @@
-import React, { useState } from 'react';
-import { Smartphone, Download, HelpCircle, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Smartphone, Download, HelpCircle, ChevronDown, ChevronUp, X } from 'lucide-react';
 
 const MobileDownloadButton = () => {
   const [showInstructions, setShowInstructions] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem('codesync_apk_banner_dismissed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [isInApp, setIsInApp] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const ua = navigator.userAgent || '';
+      const isWebView = /CodeSyncApp|;\s*wv\b|Version\/[0-9.]+\s+Chrome/i.test(ua);
+      const hasNativeBridge = Boolean(window.CodeSyncNative) || Boolean(window.isCodeSyncApp);
+      const hasInAppStorage = localStorage.getItem('codesync_in_app') === 'true';
+      return isWebView || hasNativeBridge || hasInAppStorage;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkNative = () => {
+      try {
+        const ua = navigator.userAgent || '';
+        const isApp =
+          Boolean(window.CodeSyncNative) ||
+          Boolean(window.isCodeSyncApp) ||
+          localStorage.getItem('codesync_in_app') === 'true' ||
+          /CodeSyncApp|;\s*wv\b|Version\/[0-9.]+\s+Chrome/i.test(ua);
+
+        if (isApp) {
+          setIsInApp(true);
+        }
+      } catch {}
+    };
+
+    checkNative();
+    const timer = setTimeout(checkNative, 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleDismiss = () => {
+    setDismissed(true);
+    try {
+      localStorage.setItem('codesync_apk_banner_dismissed', 'true');
+    } catch {}
+  };
+
+  // If the user is running inside the native Android app, or has dismissed the prompt, hide it
+  if (isInApp || dismissed) {
+    return null;
+  }
 
   return (
-    <div className="md:hidden mx-4 my-3 bg-[#131B2E] border border-indigo-500/30 rounded-xl p-3 shadow-lg">
-      <div className="flex items-center justify-between gap-3">
+    <div className="md:hidden mx-4 my-3 bg-[#131B2E] border border-indigo-500/30 rounded-xl p-3 shadow-lg relative">
+      {/* Dismiss button */}
+      <button
+        onClick={handleDismiss}
+        className="absolute top-2.5 right-2.5 p-1 text-zinc-400 hover:text-zinc-200 transition-colors rounded-md"
+        aria-label="Dismiss banner"
+        title="Dismiss"
+      >
+        <X className="w-4 h-4" />
+      </button>
+
+      <div className="flex items-center justify-between gap-3 pr-6">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+          <div className="w-9 h-9 rounded-lg bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
             <Smartphone className="w-5 h-5" />
           </div>
           <div>
@@ -18,14 +82,14 @@ const MobileDownloadButton = () => {
                 v1.0.0
               </span>
             </div>
-            <p className="text-[11px] text-zinc-400">Native Android APK • 4.5 MB</p>
+            <p className="text-[11px] text-zinc-400">Native Android APK • 5.5 MB</p>
           </div>
         </div>
 
         <a
           href="/codesync.apk"
           download="codesync.apk"
-          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold py-2 px-3.5 rounded-lg shadow-md transition-all"
+          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold py-2 px-3 rounded-lg shadow-md transition-all shrink-0"
         >
           <Download className="w-3.5 h-3.5" />
           <span>Download</span>
@@ -61,7 +125,7 @@ const MobileDownloadButton = () => {
           </div>
           <div className="flex items-start gap-1.5">
             <span className="font-bold text-emerald-400">4.</span>
-            <span>Tap <strong>Install</strong>, then open CodeSync to track DSA progress!</span>
+            <span>Tap <strong>Install</strong>, then open CodeSync to track DSA progress with interactive home-screen widgets!</span>
           </div>
         </div>
       )}

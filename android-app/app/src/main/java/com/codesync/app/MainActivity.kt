@@ -118,6 +118,12 @@ class MainActivity : AppCompatActivity() {
         settings.displayZoomControls = false
         settings.mediaPlaybackRequiresUserGesture = false
 
+        // Custom User Agent identifier for CodeSync native app
+        val defaultUserAgent = settings.userAgentString ?: ""
+        if (!defaultUserAgent.contains("CodeSyncApp")) {
+            settings.userAgentString = "$defaultUserAgent CodeSyncApp/1.0.0"
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -165,9 +171,9 @@ class MainActivity : AppCompatActivity() {
                 }
                 errorOverlay.visibility = View.GONE
 
-                // Probe and sync existing session token from localStorage if present
+                // Probe and sync existing session token from localStorage if present & mark in-app
                 view?.evaluateJavascript(
-                    "(function() { try { var token = localStorage.getItem('codesync_token'); if (token && window.CodeSyncNative) { window.CodeSyncNative.syncAuth(token, '', ''); } } catch(e){} })();",
+                    "(function() { try { window.isCodeSyncApp = true; localStorage.setItem('codesync_in_app', 'true'); var token = localStorage.getItem('codesync_token'); if (token && window.CodeSyncNative) { window.CodeSyncNative.syncAuth(token, '', ''); } } catch(e){} })();",
                     null
                 )
             }

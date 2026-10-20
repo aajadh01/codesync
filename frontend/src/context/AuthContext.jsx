@@ -16,6 +16,7 @@ export const AuthProvider = ({ children }) => {
           const res = await api.get('/auth/me');
           setUser(res.data);
           if (window.CodeSyncNative?.syncAuth) {
+            try { localStorage.setItem('codesync_in_app', 'true'); } catch(e){}
             window.CodeSyncNative.syncAuth(token, res.data._id, res.data.username);
           }
         } catch (error) {
