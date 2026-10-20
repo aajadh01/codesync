@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const authMiddleware = require('../middleware/auth');
+const { protect } = require('../middleware/auth');
 const {
   getUserLists,
   getListDetails,
@@ -12,7 +12,7 @@ const {
 } = require('../controllers/widgetController');
 
 // All widget routes require valid JWT authentication
-router.use(authMiddleware);
+router.use(protect);
 
 router.get('/lists', getUserLists);
 router.get('/list/:id', getListDetails);
