@@ -25,7 +25,10 @@ class GroupFocusViewsFactory(
     private val appWidgetId = intent.getIntExtra(
         android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID,
         android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
-    )
+    ).let {
+        if (it != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) it
+        else intent.data?.lastPathSegment?.toIntOrNull() ?: android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
+    }
 
     private val pendingProblems = mutableListOf<ProblemItem>()
 

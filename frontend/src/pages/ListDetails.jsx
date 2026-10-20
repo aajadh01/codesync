@@ -125,6 +125,10 @@ const ListDetails = () => {
         setProblemTitle(res.data.title);
         setProblemDifficulty(res.data.difficulty);
         setProblemInput(res.data.url); // Standardize the field value to full LeetCode URL automatically!
+        if (res.data.topic && (!customTopic || topicType === 'General')) {
+          setTopicType('Custom');
+          setCustomTopic(res.data.topic);
+        }
       } catch (err) {
         console.error('Failed to fetch LeetCode problem details:', err);
         if (isUrl) {
@@ -152,16 +156,43 @@ const ListDetails = () => {
     setModalError('');
     setModalLoading(true);
 
-    if (!problemTitle.trim() || !problemInput.trim()) {
-      setModalError('Please fill in both the title and url/number.');
+    let finalTitle = problemTitle.trim();
+    let finalUrl = problemInput.trim();
+    let finalDifficulty = problemDifficulty;
+    let finalTopic = topicType === 'General' ? 'General' : (customTopic.trim() || 'General');
+
+    if (!finalUrl && !finalTitle) {
+      setModalError('Please enter a LeetCode problem number or URL.');
       setModalLoading(false);
       return;
     }
 
+    // Auto-resolve if title is missing
+    if (!finalTitle && finalUrl) {
+      try {
+        const cleanId = finalUrl.includes('leetcode.com/problems/')
+          ? finalUrl.split('leetcode.com/problems/')[1].split('/')[0]
+          : finalUrl;
+        const res = await api.get(`/problems/leetcode/${cleanId}`);
+        if (res.data) {
+          finalTitle = res.data.title;
+          finalDifficulty = res.data.difficulty || finalDifficulty;
+          finalUrl = res.data.url || finalUrl;
+          if (res.data.topic && finalTopic === 'General') {
+            finalTopic = res.data.topic;
+          }
+        }
+      } catch (err) {
+        console.warn('Auto-resolve on submit fallback:', err);
+      }
+    }
+
+    if (!finalTitle) {
+      finalTitle = /^\d+$/.test(finalUrl) ? `Problem #${finalUrl}` : finalUrl;
+    }
+
     // Ensure valid URL
-    let finalUrl = problemInput.trim();
     if (/^\d+$/.test(finalUrl)) {
-      // If it is just a number, make a search URL
       finalUrl = `https://leetcode.com/problemset/all/?search=${finalUrl}`;
     } else if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
       finalUrl = `https://${finalUrl}`;
@@ -169,11 +200,11 @@ const ListDetails = () => {
 
     try {
       await api.post('/problems', {
-        title: problemTitle.trim(),
-        difficulty: problemDifficulty,
+        title: finalTitle,
+        difficulty: finalDifficulty,
         url: finalUrl,
         listId: id,
-        topic: topicType === 'General' ? 'General' : customTopic.trim(),
+        topic: finalTopic,
       });
 
       // Clear states and reload

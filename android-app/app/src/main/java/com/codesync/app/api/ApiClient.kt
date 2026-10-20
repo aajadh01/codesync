@@ -292,6 +292,41 @@ object ApiClient {
         }
     }
 
+    fun getLeetCodeDetails(context: Context, identifier: String): Result<LeetCodeProblemDetails> {
+        return try {
+            val clean = identifier.trim()
+            val encoded = java.net.URLEncoder.encode(clean, "UTF-8")
+            val url = "${getBaseUrl(context)}/problems/leetcode/$encoded"
+            val request = buildRequest(context, url)
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (response.code == 401 || response.code == 403) {
+                    return Result.failure(AuthException("Session expired. Please log in."))
+                }
+                if (!response.isSuccessful) {
+                    val msg = try {
+                        JSONObject(bodyStr).optString("message", "Problem '$identifier' not found on LeetCode")
+                    } catch (e: Exception) {
+                        "Problem '$identifier' not found on LeetCode"
+                    }
+                    return Result.failure(IOException(msg))
+                }
+                val json = JSONObject(bodyStr)
+                Result.success(
+                    LeetCodeProblemDetails(
+                        id = json.optString("id", ""),
+                        title = json.getString("title"),
+                        difficulty = json.optString("difficulty", "Medium"),
+                        url = json.getString("url"),
+                        topic = json.optString("topic", "General")
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun addProblem(
         context: Context,
         title: String,

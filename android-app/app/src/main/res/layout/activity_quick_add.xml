@@ -53,29 +53,59 @@
             android:paddingStart="8dp"
             android:paddingEnd="8dp" />
 
-        <!-- LeetCode URL -->
+        <!-- LeetCode Number or URL -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="LeetCode Problem URL *"
+            android:text="LeetCode Problem Number or URL *"
             android:textColor="@color/text_muted"
             android:textSize="12sp"
             android:textStyle="bold"
             android:layout_marginBottom="4dp" />
 
-        <EditText
-            android:id="@+id/et_url"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="@drawable/bg_card"
-            android:hint="https://leetcode.com/problems/..."
-            android:inputType="textUri"
-            android:textColor="@color/text_white"
-            android:textColorHint="@color/text_muted"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:textSize="14sp"
-            android:layout_marginBottom="14dp" />
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+
+            <EditText
+                android:id="@+id/et_url"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_card"
+                android:hint="e.g. 1, 42, two-sum, or URL"
+                android:inputType="text"
+                android:textColor="@color/text_white"
+                android:textColorHint="@color/text_muted"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btn_fetch"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/bg_pill_topic"
+                android:text="Fetch"
+                android:textColor="@color/accent"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_fetch_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enter a LeetCode problem number to auto-fill details"
+            android:textColor="@color/text_muted"
+            android:textSize="11sp"
+            android:layout_marginBottom="12dp" />
 
         <!-- Problem Title -->
         <TextView

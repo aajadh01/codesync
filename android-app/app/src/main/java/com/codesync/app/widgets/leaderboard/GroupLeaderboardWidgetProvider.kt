@@ -17,53 +17,12 @@ class GroupLeaderboardWidgetProvider : AppWidgetProvider() {
     companion object {
         const val ACTION_REFRESH = "com.codesync.app.leaderboard.ACTION_REFRESH"
         const val ACTION_ITEM_CLICK = "com.codesync.app.leaderboard.ACTION_ITEM_CLICK"
-    }
 
-    override fun onUpdate(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray
-    ) {
-        for (appWidgetId in appWidgetIds) {
-            updateAppWidget(context, appWidgetManager, appWidgetId)
-        }
-        super.onUpdate(context, appWidgetManager, appWidgetIds)
-    }
-
-    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        for (id in appWidgetIds) {
-            AuthStorage.removeWidgetConfig(context, id)
-        }
-        super.onDeleted(context, appWidgetIds)
-    }
-
-    override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-
-        when (intent.action) {
-            ACTION_REFRESH -> {
-                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
-                if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-                    val appWidgetManager = AppWidgetManager.getInstance(context)
-                    appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_rankings)
-                    updateAppWidget(context, appWidgetManager, appWidgetId)
-                }
-            }
-
-            ACTION_ITEM_CLICK -> {
-                val openIntent = Intent(context, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                }
-                context.startActivity(openIntent)
-            }
-        }
-    }
-
-    private fun updateAppWidget(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetId: Int
-    ) {
+        fun updateAppWidget(
+            context: Context,
+            appWidgetManager: AppWidgetManager,
+            appWidgetId: Int
+        ) {
         val views = RemoteViews(context.packageName, R.layout.widget_group_leaderboard)
 
         val listName = AuthStorage.getWidgetListName(context, appWidgetId) ?: "Leaderboard"
@@ -89,7 +48,7 @@ class GroupLeaderboardWidgetProvider : AppWidgetProvider() {
         // Set up RemoteViewsService Adapter for ListView
         val serviceIntent = Intent(context, GroupLeaderboardService::class.java).apply {
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
+            data = Uri.parse("codesync://widget/leaderboard/$appWidgetId")
         }
         views.setRemoteAdapter(R.id.lv_rankings, serviceIntent)
         views.setEmptyView(R.id.lv_rankings, R.id.tv_empty)
@@ -146,5 +105,46 @@ class GroupLeaderboardWidgetProvider : AppWidgetProvider() {
 
         appWidgetManager.updateAppWidget(appWidgetId, views)
         appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_rankings)
+    }
+}
+
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
+        for (appWidgetId in appWidgetIds) {
+            updateAppWidget(context, appWidgetManager, appWidgetId)
+        }
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
+    }
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        for (id in appWidgetIds) {
+            AuthStorage.removeWidgetConfig(context, id)
+        }
+        super.onDeleted(context, appWidgetIds)
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+
+        when (intent.action) {
+            ACTION_REFRESH -> {
+                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                    val appWidgetManager = AppWidgetManager.getInstance(context)
+                    appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_rankings)
+                    updateAppWidget(context, appWidgetManager, appWidgetId)
+                }
+            }
+
+            ACTION_ITEM_CLICK -> {
+                val openIntent = Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+                context.startActivity(openIntent)
+            }
+        }
     }
 }

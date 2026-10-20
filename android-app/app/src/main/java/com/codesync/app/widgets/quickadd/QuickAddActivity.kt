@@ -11,6 +11,7 @@ import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.RadioGroup
 import android.widget.Spinner
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.codesync.app.MainActivity
@@ -21,12 +22,16 @@ import com.codesync.app.auth.AuthStorage
 import com.codesync.app.sync.WidgetSyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class QuickAddActivity : AppCompatActivity() {
 
     private lateinit var spLists: Spinner
     private lateinit var etUrl: EditText
+    private lateinit var btnFetch: Button
+    private lateinit var tvFetchStatus: TextView
     private lateinit var etTitle: EditText
     private lateinit var rgDifficulty: RadioGroup
     private lateinit var etTopic: EditText
@@ -35,6 +40,7 @@ class QuickAddActivity : AppCompatActivity() {
 
     private var lists = listOf<ListSummary>()
     private var preselectedListId: String? = null
+    private var autoFetchJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,24 +62,41 @@ class QuickAddActivity : AppCompatActivity() {
     private fun initViews() {
         spLists = findViewById(R.id.sp_lists)
         etUrl = findViewById(R.id.et_url)
+        btnFetch = findViewById(R.id.btn_fetch)
+        tvFetchStatus = findViewById(R.id.tv_fetch_status)
         etTitle = findViewById(R.id.et_title)
         rgDifficulty = findViewById(R.id.rg_difficulty)
         etTopic = findViewById(R.id.et_topic)
         btnSubmit = findViewById(R.id.btn_submit)
         pbLoading = findViewById(R.id.pb_loading)
 
-        // Auto-extract slug to problem title when URL is pasted
+        // Manual Fetch button
+        btnFetch.setOnClickListener {
+            val input = etUrl.text.toString().trim()
+            if (input.isNotEmpty()) {
+                fetchLeetCodeDetails(input, andSubmit = false)
+            } else {
+                etUrl.error = "Enter a problem number or URL"
+            }
+        }
+
+        // Auto-fetch on input change (debounced 750ms)
         etUrl.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                val url = s?.toString()?.trim() ?: return
-                if (etTitle.text.isNullOrEmpty() && url.contains("leetcode.com/problems/")) {
-                    val parts = url.substringAfter("leetcode.com/problems/").split("/").filter { it.isNotEmpty() }
-                    if (parts.isNotEmpty()) {
-                        val slug = parts[0]
-                        val guessedTitle = slug.split("-").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-                        etTitle.setText(guessedTitle)
+                val input = s?.toString()?.trim() ?: return
+                if (input.isEmpty()) {
+                    tvFetchStatus.text = "Enter a LeetCode problem number to auto-fill details"
+                    tvFetchStatus.setTextColor(getColor(R.color.text_muted))
+                    return
+                }
+
+                autoFetchJob?.cancel()
+                autoFetchJob = CoroutineScope(Dispatchers.Main).launch {
+                    delay(750)
+                    if (input.isNotEmpty() && !isFinishing) {
+                        fetchLeetCodeDetails(input, andSubmit = false)
                     }
                 }
             }
@@ -82,6 +105,58 @@ class QuickAddActivity : AppCompatActivity() {
         btnSubmit.setOnClickListener {
             submitProblem()
         }
+    }
+
+    private fun fetchLeetCodeDetails(input: String, andSubmit: Boolean) {
+        val query = extractProblemIdentifier(input)
+        if (query.isEmpty()) return
+
+        tvFetchStatus.text = "Fetching LeetCode details for '$query'..."
+        tvFetchStatus.setTextColor(getColor(R.color.accent_cyan))
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val result = ApiClient.getLeetCodeDetails(this@QuickAddActivity, query)
+            CoroutineScope(Dispatchers.Main).launch {
+                if (result.isSuccess) {
+                    val details = result.getOrNull()!!
+                    etTitle.setText(details.title)
+                    etUrl.setText(details.url)
+                    etTopic.setText(details.topic)
+
+                    when (details.difficulty) {
+                        "Easy" -> rgDifficulty.check(R.id.rb_easy)
+                        "Hard" -> rgDifficulty.check(R.id.rb_hard)
+                        else -> rgDifficulty.check(R.id.rb_medium)
+                    }
+
+                    tvFetchStatus.text = "✓ Found: ${details.title} (${details.difficulty}, ${details.topic})"
+                    tvFetchStatus.setTextColor(getColor(R.color.diff_easy))
+
+                    if (andSubmit) {
+                        executeAdd(details.title, details.difficulty, details.url, details.topic)
+                    }
+                } else {
+                    val err = result.exceptionOrNull()?.message ?: "Problem not found"
+                    tvFetchStatus.text = "Could not auto-fetch: $err"
+                    tvFetchStatus.setTextColor(getColor(R.color.diff_hard))
+
+                    if (andSubmit) {
+                        pbLoading.visibility = View.GONE
+                        btnSubmit.isEnabled = true
+                        Toast.makeText(this@QuickAddActivity, err, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun extractProblemIdentifier(raw: String): String {
+        val clean = raw.trim()
+        if (clean.contains("leetcode.com/problems/")) {
+            val parts = clean.substringAfter("leetcode.com/problems/").split("/").filter { it.isNotEmpty() }
+            if (parts.isNotEmpty()) return parts[0]
+        }
+        return clean
     }
 
     private fun loadLists() {
@@ -109,7 +184,6 @@ class QuickAddActivity : AppCompatActivity() {
                     )
                     spLists.adapter = adapter
 
-                    // Select preselected list if matched
                     if (!preselectedListId.isNullOrEmpty()) {
                         val idx = lists.indexOfFirst { it.id == preselectedListId }
                         if (idx >= 0) {
@@ -135,21 +209,19 @@ class QuickAddActivity : AppCompatActivity() {
             return
         }
 
-        val targetList = lists[selectedIndex]
-        val url = etUrl.text.toString().trim()
-        val title = etTitle.text.toString().trim()
-        val topic = etTopic.text.toString().trim()
+        val rawInput = etUrl.text.toString().trim()
+        var title = etTitle.text.toString().trim()
 
-        if (url.isEmpty()) {
-            etUrl.error = "LeetCode URL is required"
+        if (rawInput.isEmpty() && title.isEmpty()) {
+            etUrl.error = "Enter a LeetCode problem number or URL"
             return
         }
-        if (!url.contains("leetcode.com", ignoreCase = true)) {
-            etUrl.error = "Must be a valid LeetCode URL"
-            return
-        }
+
+        // If title is missing or user just typed a number/slug, auto-resolve and submit
         if (title.isEmpty()) {
-            etTitle.error = "Problem title is required"
+            pbLoading.visibility = View.VISIBLE
+            btnSubmit.isEnabled = false
+            fetchLeetCodeDetails(rawInput, andSubmit = true)
             return
         }
 
@@ -158,6 +230,23 @@ class QuickAddActivity : AppCompatActivity() {
             R.id.rb_hard -> "Hard"
             else -> "Medium"
         }
+
+        val finalUrl = if (rawInput.contains("leetcode.com")) {
+            rawInput
+        } else if (rawInput.isNotEmpty() && rawInput.all { it.isDigit() }) {
+            "https://leetcode.com/problemset/all/?search=$rawInput"
+        } else {
+            "https://leetcode.com/problems/${extractProblemIdentifier(rawInput)}/"
+        }
+
+        val topic = etTopic.text.toString().trim().ifEmpty { "General" }
+        executeAdd(title, difficulty, finalUrl, topic)
+    }
+
+    private fun executeAdd(title: String, difficulty: String, url: String, topic: String) {
+        val selectedIndex = spLists.selectedItemPosition
+        if (selectedIndex < 0 || selectedIndex >= lists.size) return
+        val targetList = lists[selectedIndex]
 
         pbLoading.visibility = View.VISIBLE
         btnSubmit.isEnabled = false
@@ -169,7 +258,7 @@ class QuickAddActivity : AppCompatActivity() {
                 difficulty = difficulty,
                 url = url,
                 listId = targetList.id,
-                topic = if (topic.isNotEmpty()) topic else "General"
+                topic = topic
             )
 
             CoroutineScope(Dispatchers.Main).launch {

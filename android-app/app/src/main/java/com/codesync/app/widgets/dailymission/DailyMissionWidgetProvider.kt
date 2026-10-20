@@ -25,6 +25,10 @@ class DailyMissionWidgetProvider : AppWidgetProvider() {
         const val ACTION_MARK_SOLVED = "com.codesync.app.dailymission.ACTION_MARK_SOLVED"
         const val ACTION_REFRESH = "com.codesync.app.dailymission.ACTION_REFRESH"
         const val ACTION_OPEN_URL = "com.codesync.app.dailymission.ACTION_OPEN_URL"
+
+        fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
+            DailyMissionWidgetProvider().updateAppWidget(context, appWidgetManager, appWidgetId)
+        }
     }
 
     override fun onUpdate(
@@ -44,22 +48,30 @@ class DailyMissionWidgetProvider : AppWidgetProvider() {
         when (intent.action) {
             ACTION_MARK_SOLVED -> {
                 val problemId = intent.getStringExtra("EXTRA_PROBLEM_ID")
+                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
                 if (!problemId.isNullOrEmpty() && !problemId.startsWith("fallback-")) {
+                    val pendingResult = goAsync()
                     CoroutineScope(Dispatchers.IO).launch {
-                        val result = ApiClient.toggleProblemSolve(context, problemId)
-                        if (result.isSuccess) {
+                        try {
+                            val result = ApiClient.toggleProblemSolve(context, problemId)
                             CoroutineScope(Dispatchers.Main).launch {
-                                Toast.makeText(context, "Daily mission problem solved! 🎯", Toast.LENGTH_SHORT).show()
+                                if (result.isSuccess) {
+                                    Toast.makeText(context, "Daily mission problem solved! 🎯", Toast.LENGTH_SHORT).show()
+                                    val appWidgetManager = AppWidgetManager.getInstance(context)
+                                    if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                                        updateAppWidget(context, appWidgetManager, appWidgetId)
+                                    }
+                                    WidgetSyncWorker.enqueueImmediateSync(context)
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        result.exceptionOrNull()?.message ?: "Failed to update",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
-                            WidgetSyncWorker.enqueueImmediateSync(context)
-                        } else {
-                            CoroutineScope(Dispatchers.Main).launch {
-                                Toast.makeText(
-                                    context,
-                                    result.exceptionOrNull()?.message ?: "Failed to update",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                        } finally {
+                            pendingResult.finish()
                         }
                     }
                 } else if (problemId?.startsWith("fallback-") == true) {
@@ -91,7 +103,7 @@ class DailyMissionWidgetProvider : AppWidgetProvider() {
         }
     }
 
-    private fun updateAppWidget(
+    fun updateAppWidget(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetId: Int

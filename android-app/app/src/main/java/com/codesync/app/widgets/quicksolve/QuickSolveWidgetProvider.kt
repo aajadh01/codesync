@@ -23,6 +23,90 @@ class QuickSolveWidgetProvider : AppWidgetProvider() {
     companion object {
         const val ACTION_ITEM_CLICK = "com.codesync.app.quicksolve.ACTION_ITEM_CLICK"
         const val ACTION_REFRESH = "com.codesync.app.quicksolve.ACTION_REFRESH"
+
+        fun updateAppWidget(
+            context: Context,
+            appWidgetManager: AppWidgetManager,
+            appWidgetId: Int
+        ) {
+            val views = RemoteViews(context.packageName, R.layout.widget_quick_solve)
+
+            val listName = AuthStorage.getWidgetListName(context, appWidgetId) ?: "Quick Solve"
+            views.setTextViewText(R.id.tv_widget_title, listName)
+
+            val cachedBadge = AuthStorage.getWidgetCache(context, "qs_stats_$appWidgetId")
+            if (!cachedBadge.isNullOrEmpty()) {
+                views.setTextViewText(R.id.tv_solved_badge, cachedBadge)
+            }
+
+            val isLoggedIn = AuthStorage.isLoggedIn(context)
+            if (!isLoggedIn) {
+                views.setViewVisibility(R.id.tv_unauth_banner, View.VISIBLE)
+                val loginIntent = Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+                val loginPi = PendingIntent.getActivity(
+                    context,
+                    appWidgetId,
+                    loginIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                views.setOnClickPendingIntent(R.id.tv_unauth_banner, loginPi)
+            } else {
+                views.setViewVisibility(R.id.tv_unauth_banner, View.GONE)
+            }
+
+            // Set up RemoteViewsService Adapter for ListView with unique URI
+            val serviceIntent = Intent(context, QuickSolveService::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                data = Uri.parse("codesync://widget/quicksolve/$appWidgetId")
+            }
+            views.setRemoteAdapter(R.id.lv_problems, serviceIntent)
+            views.setEmptyView(R.id.lv_problems, R.id.tv_empty)
+
+            // PendingIntent template for ListView item clicks
+            val itemClickIntent = Intent(context, QuickSolveWidgetProvider::class.java).apply {
+                action = ACTION_ITEM_CLICK
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                putExtra("EXTRA_APPWIDGET_ID", appWidgetId)
+            }
+            val itemClickPi = PendingIntent.getBroadcast(
+                context,
+                appWidgetId,
+                itemClickIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            views.setPendingIntentTemplate(R.id.lv_problems, itemClickPi)
+
+            // Refresh PendingIntent
+            val refreshIntent = Intent(context, QuickSolveWidgetProvider::class.java).apply {
+                action = ACTION_REFRESH
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+            val refreshPi = PendingIntent.getBroadcast(
+                context,
+                appWidgetId + 1000,
+                refreshIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.btn_refresh, refreshPi)
+
+            // Config PendingIntent to switch list
+            val configIntent = Intent(context, QuickSolveConfigureActivity::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            val configPi = PendingIntent.getActivity(
+                context,
+                appWidgetId + 2000,
+                configIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setOnClickPendingIntent(R.id.btn_config, configPi)
+
+            appWidgetManager.updateAppWidget(appWidgetId, views)
+            appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_problems)
+        }
     }
 
     override fun onUpdate(
@@ -49,28 +133,40 @@ class QuickSolveWidgetProvider : AppWidgetProvider() {
         when (intent.action) {
             ACTION_ITEM_CLICK -> {
                 val actionType = intent.getStringExtra("EXTRA_ACTION_TYPE")
-                val appWidgetId = intent.getIntExtra("EXTRA_APPWIDGET_ID", AppWidgetManager.INVALID_APPWIDGET_ID)
+                val appWidgetId = intent.getIntExtra(
+                    "EXTRA_APPWIDGET_ID",
+                    intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                )
 
                 if (actionType == "TOGGLE_SOLVE") {
                     val problemId = intent.getStringExtra("EXTRA_PROBLEM_ID")
                     if (!problemId.isNullOrEmpty()) {
+                        val pendingResult = goAsync()
                         CoroutineScope(Dispatchers.IO).launch {
-                            val result = ApiClient.toggleProblemSolve(context, problemId)
-                            if (result.isSuccess) {
-                                val solveRes = result.getOrNull()
-                                val msg = if (solveRes?.isSolved == true) "Solved! Keep it up 🚀" else "Marked as unsolved"
+                            try {
+                                val result = ApiClient.toggleProblemSolve(context, problemId)
                                 CoroutineScope(Dispatchers.Main).launch {
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    if (result.isSuccess) {
+                                        val solveRes = result.getOrNull()
+                                        val msg = if (solveRes?.isSolved == true) "Solved! Keep it up 🚀" else "Marked as unsolved"
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+
+                                        val appWidgetManager = AppWidgetManager.getInstance(context)
+                                        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                                            appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_problems)
+                                            updateAppWidget(context, appWidgetManager, appWidgetId)
+                                        }
+                                        WidgetSyncWorker.enqueueImmediateSync(context)
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            result.exceptionOrNull()?.message ?: "Failed to update",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 }
-                                WidgetSyncWorker.enqueueImmediateSync(context)
-                            } else {
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    Toast.makeText(
-                                        context,
-                                        result.exceptionOrNull()?.message ?: "Failed to update",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
+                            } finally {
+                                pendingResult.finish()
                             }
                         }
                     }
@@ -98,83 +194,5 @@ class QuickSolveWidgetProvider : AppWidgetProvider() {
                 }
             }
         }
-    }
-
-    private fun updateAppWidget(
-        context: Context,
-        appWidgetManager: AppWidgetManager,
-        appWidgetId: Int
-    ) {
-        val views = RemoteViews(context.packageName, R.layout.widget_quick_solve)
-
-        val listName = AuthStorage.getWidgetListName(context, appWidgetId) ?: "Quick Solve"
-        views.setTextViewText(R.id.tv_widget_title, listName)
-
-        val isLoggedIn = AuthStorage.isLoggedIn(context)
-        if (!isLoggedIn) {
-            views.setViewVisibility(R.id.tv_unauth_banner, View.VISIBLE)
-            val loginIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val loginPi = PendingIntent.getActivity(
-                context,
-                appWidgetId,
-                loginIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            views.setOnClickPendingIntent(R.id.tv_unauth_banner, loginPi)
-        } else {
-            views.setViewVisibility(R.id.tv_unauth_banner, View.GONE)
-        }
-
-        // Set up RemoteViewsService Adapter for ListView
-        val serviceIntent = Intent(context, QuickSolveService::class.java).apply {
-            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
-        }
-        views.setRemoteAdapter(R.id.lv_problems, serviceIntent)
-        views.setEmptyView(R.id.lv_problems, R.id.tv_empty)
-
-        // PendingIntent template for ListView item clicks
-        val itemClickIntent = Intent(context, QuickSolveWidgetProvider::class.java).apply {
-            action = ACTION_ITEM_CLICK
-            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        }
-        val itemClickPi = PendingIntent.getBroadcast(
-            context,
-            appWidgetId,
-            itemClickIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-        )
-        views.setPendingIntentTemplate(R.id.lv_problems, itemClickPi)
-
-        // Refresh PendingIntent
-        val refreshIntent = Intent(context, QuickSolveWidgetProvider::class.java).apply {
-            action = ACTION_REFRESH
-            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        }
-        val refreshPi = PendingIntent.getBroadcast(
-            context,
-            appWidgetId + 1000,
-            refreshIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        views.setOnClickPendingIntent(R.id.btn_refresh, refreshPi)
-
-        // Config PendingIntent to switch list
-        val configIntent = Intent(context, QuickSolveConfigureActivity::class.java).apply {
-            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        val configPi = PendingIntent.getActivity(
-            context,
-            appWidgetId + 2000,
-            configIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        views.setOnClickPendingIntent(R.id.btn_config, configPi)
-
-        appWidgetManager.updateAppWidget(appWidgetId, views)
-        appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_problems)
     }
 }

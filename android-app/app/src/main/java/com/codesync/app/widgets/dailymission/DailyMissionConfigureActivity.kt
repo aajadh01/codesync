@@ -70,11 +70,8 @@ class DailyMissionConfigureActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             ApiClient.setDailyTarget(this@DailyMissionConfigureActivity, currentTarget)
             CoroutineScope(Dispatchers.Main).launch {
-                val updateIntent = Intent(this@DailyMissionConfigureActivity, DailyMissionWidgetProvider::class.java).apply {
-                    action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
-                }
-                sendBroadcast(updateIntent)
+                val appWidgetManager = AppWidgetManager.getInstance(this@DailyMissionConfigureActivity)
+                DailyMissionWidgetProvider.updateWidget(this@DailyMissionConfigureActivity, appWidgetManager, appWidgetId)
 
                 val resultValue = Intent().apply {
                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)

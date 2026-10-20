@@ -2,6 +2,115 @@ const Problem = require('../models/Problem');
 const List = require('../models/List');
 const SolveEvent = require('../models/SolveEvent');
 
+// In-memory indexed cache for LeetCode dataset to achieve instant (<1ms) lookups
+let leetcodeCache = null; // { byNumber: Map, bySlug: Map }
+let leetcodeFetchPromise = null;
+
+const ensureLeetCodeDataset = async () => {
+  if (leetcodeCache) return leetcodeCache;
+  if (leetcodeFetchPromise) return leetcodeFetchPromise;
+
+  leetcodeFetchPromise = (async () => {
+    try {
+      console.log('Loading LeetCode questions dataset into memory cache...');
+      const datasetUrl = 'https://raw.githubusercontent.com/noworneverev/leetcode-api/main/data/leetcode_questions.json';
+      const response = await fetch(datasetUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch LeetCode dataset: ${response.statusText}`);
+      }
+      const problemsList = await response.json();
+      const byNumber = new Map();
+      const bySlug = new Map();
+
+      for (const item of problemsList) {
+        const q = item.data?.question || item.question || item;
+        const id = q.questionFrontendId || q.question_id || q.questionId || q.frontend_id || q.id;
+        const title = q.title || q.question_title || q.questionTitle;
+        const difficulty = q.difficulty || 'Medium';
+        let url = q.url || '';
+        let slug = q.titleSlug || q.questionTitleSlug || q.title_slug || q.slug || '';
+
+        if (!slug && url) {
+          const match = url.match(/problems\/([^/?#]+)/i);
+          if (match) slug = match[1];
+        }
+        if (!slug && title) {
+          slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        }
+        if (!url && slug) {
+          url = `https://leetcode.com/problems/${slug}/`;
+        }
+
+        let topic = 'General';
+        if (Array.isArray(q.topicTags) && q.topicTags.length > 0 && q.topicTags[0].name) {
+          topic = q.topicTags[0].name;
+        }
+
+        const problemData = {
+          id: id ? id.toString() : '',
+          title: title ? title.trim() : `Problem #${id}`,
+          difficulty,
+          url,
+          slug: slug ? slug.toLowerCase() : '',
+          topic,
+        };
+
+        if (id) {
+          byNumber.set(id.toString(), problemData);
+        }
+        if (slug) {
+          bySlug.set(slug.toLowerCase(), problemData);
+        }
+      }
+
+      console.log(`Indexed ${byNumber.size} LeetCode problems successfully in memory!`);
+      leetcodeCache = { byNumber, bySlug };
+      return leetcodeCache;
+    } catch (err) {
+      console.error('Failed to load LeetCode dataset:', err.message);
+      leetcodeFetchPromise = null;
+      throw err;
+    }
+  })();
+
+  return leetcodeFetchPromise;
+};
+
+// Auto-resolve LeetCode problem from number, slug, or full URL
+const resolveLeetCodeProblem = async (identifier) => {
+  if (!identifier) return null;
+  const clean = identifier.toString().trim();
+  const dataset = await ensureLeetCodeDataset();
+
+  // 1. Direct number match (e.g. "1", "42", "238")
+  if (/^\d+$/.test(clean)) {
+    return dataset.byNumber.get(clean) || null;
+  }
+
+  // 2. Extract slug if full or partial URL
+  let targetSlug = clean.toLowerCase();
+  const urlMatch = clean.match(/leetcode\.com\/problems\/([^/?#]+)/i);
+  if (urlMatch) {
+    targetSlug = urlMatch[1].toLowerCase();
+  } else {
+    // If input is something like "problems/two-sum" or "two-sum/"
+    targetSlug = targetSlug.replace(/^problems\//, '').replace(/\/.*$/, '');
+  }
+
+  // 3. Match by slug
+  if (dataset.bySlug.has(targetSlug)) {
+    return dataset.bySlug.get(targetSlug);
+  }
+
+  // 4. Try kebab-case normalized slug
+  const normalized = targetSlug.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  if (dataset.bySlug.has(normalized)) {
+    return dataset.bySlug.get(normalized);
+  }
+
+  return null;
+};
+
 // Helper to normalize LeetCode URLs for duplicate checking
 const normalizeUrl = (urlStr) => {
   if (!urlStr) return '';
@@ -27,9 +136,34 @@ const normalizeUrl = (urlStr) => {
 // @access  Private
 const addProblem = async (req, res) => {
   try {
-    const { title, difficulty, url, listId, topic } = req.body;
+    let { title, difficulty, url, listId, topic } = req.body;
 
-    if (!title || !difficulty || !url || !listId) {
+    if (!listId) {
+      return res.status(400).json({ message: 'Target listId is required' });
+    }
+
+    // Auto-resolve problem if only a number, slug, or partial URL was provided
+    const lookupKey = url || title;
+    if (lookupKey && (!title || !difficulty || !url || /^\d+$/.test(lookupKey.trim()) || !url.includes('leetcode.com'))) {
+      try {
+        const resolved = await resolveLeetCodeProblem(lookupKey);
+        if (resolved) {
+          title = title || resolved.title;
+          difficulty = difficulty || resolved.difficulty;
+          url = resolved.url;
+          topic = topic || resolved.topic;
+        }
+      } catch (err) {
+        console.warn('Auto-resolve during addProblem warning:', err.message);
+      }
+    }
+
+    // If still missing full LeetCode URL but we have a number
+    if (url && /^\d+$/.test(url.trim())) {
+      url = `https://leetcode.com/problemset/all/?search=${url.trim()}`;
+    }
+
+    if (!title || !difficulty || !url) {
       return res.status(400).json({ message: 'All fields (title, difficulty, url, listId) are required' });
     }
 
@@ -159,66 +293,38 @@ const toggleSolved = async (req, res) => {
   }
 };
 
-// @desc    Fetch LeetCode problem details by number/ID
+// @desc    Fetch LeetCode problem details by number/ID/slug
 // @route   GET /api/problems/leetcode/:number
 // @access  Private
 const getLeetCodeProblemDetails = async (req, res) => {
   try {
-    const identifier = req.params.number.trim();
+    const identifier = (req.params.number || req.query.query || req.query.q || req.query.id || '').trim();
     if (!identifier) {
       return res.status(400).json({ message: 'Problem identifier (number or slug) is required' });
     }
 
-    const isNumber = /^\d+$/.test(identifier);
-    const problemNumber = isNumber ? parseInt(identifier, 10) : null;
-    const targetSlug = isNumber ? null : identifier.toLowerCase();
-    
-    // Download the LeetCode questions dataset from a raw, reliable GitHub source
-    const datasetUrl = 'https://raw.githubusercontent.com/noworneverev/leetcode-api/main/data/leetcode_questions.json';
-    
-    console.log(`Fetching LeetCode problem data by identifier: ${identifier}...`);
-    
-    const response = await fetch(datasetUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch LeetCode dataset: ${response.statusText}`);
-    }
-    
-    const problemsList = await response.json();
-    
-    // Search for the question inside the list supporting flat and nested structures
-    const matched = problemsList.find(item => {
-      const q = item.data?.question || item.question || item;
-      if (isNumber) {
-        const id = q.questionFrontendId || q.question_id || q.questionId || q.frontend_id || q.id;
-        return id && parseInt(id, 10) === problemNumber;
-      } else {
-        const slug = q.titleSlug || q.questionTitleSlug || q.title_slug || q.question_title_slug || q.slug || '';
-        return slug.toLowerCase() === targetSlug;
-      }
-    });
-    
-    if (matched) {
-      const q = matched.data?.question || matched.question || matched;
-      
-      const title = q.title || q.question_title || q.questionTitle;
-      const slug = q.titleSlug || q.questionTitleSlug || q.title_slug || q.question_title_slug || q.slug;
-      const difficulty = q.difficulty || 'Medium';
-      
-      const url = q.url || `https://leetcode.com/problems/${slug}/`;
-      
+    const problem = await resolveLeetCodeProblem(identifier);
+    if (problem) {
       return res.json({
-        title,
-        difficulty,
-        url
+        id: problem.id,
+        title: problem.title,
+        difficulty: problem.difficulty,
+        url: problem.url,
+        topic: problem.topic,
       });
-    } else {
-      return res.status(404).json({ message: `LeetCode problem "${identifier}" not found in database.` });
     }
+
+    return res.status(404).json({ message: `LeetCode problem "${identifier}" not found in database.` });
   } catch (error) {
     console.error('Error fetching LeetCode problem:', error.message);
     res.status(500).json({ message: 'Could not fetch LeetCode problem automatically.' });
   }
 };
+
+// Pre-warm the LeetCode questions cache in background on server start
+ensureLeetCodeDataset().catch((e) => {
+  console.warn('Initial background pre-warm of LeetCode dataset error (will retry on demand):', e.message);
+});
 
 module.exports = {
   addProblem,

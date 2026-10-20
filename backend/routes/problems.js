@@ -7,6 +7,7 @@ router.use(protect); // All problem routes require authentication
 
 router.post('/', addProblem);
 router.get('/leetcode/:number', getLeetCodeProblemDetails);
+router.get('/leetcode', getLeetCodeProblemDetails);
 router.put('/:id/solve', toggleSolved);
 
 module.exports = router;

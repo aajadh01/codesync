@@ -25,7 +25,10 @@ class QuickSolveViewsFactory(
     private val appWidgetId = intent.getIntExtra(
         android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID,
         android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
-    )
+    ).let {
+        if (it != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) it
+        else intent.data?.lastPathSegment?.toIntOrNull() ?: android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
+    }
 
     private val problems = mutableListOf<ProblemItem>()
 
@@ -53,6 +56,18 @@ class QuickSolveViewsFactory(
                 val data = result.getOrNull()!!
                 problems.clear()
                 problems.addAll(data.problems)
+
+                val stats = "${data.solvedCount}/${data.totalProblems}"
+                if (appWidgetId != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) {
+                    AuthStorage.saveWidgetCache(context, "qs_stats_$appWidgetId", stats)
+                    try {
+                        val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
+                        val views = RemoteViews(context.packageName, R.layout.widget_quick_solve)
+                        views.setTextViewText(R.id.tv_solved_badge, stats)
+                        views.setTextViewText(R.id.tv_widget_title, data.name)
+                        appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
+                    } catch (ignored: Exception) {}
+                }
 
                 // Cache for offline support
                 try {
@@ -140,6 +155,7 @@ class QuickSolveViewsFactory(
             putExtra("EXTRA_ACTION_TYPE", "TOGGLE_SOLVE")
             putExtra("EXTRA_PROBLEM_ID", problem.id)
             putExtra("EXTRA_APPWIDGET_ID", appWidgetId)
+            putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         }
         views.setOnClickFillInIntent(R.id.btn_checkbox, toggleFillIn)
 
@@ -150,6 +166,7 @@ class QuickSolveViewsFactory(
         }
         views.setOnClickFillInIntent(R.id.btn_open_leetcode, urlFillIn)
         views.setOnClickFillInIntent(R.id.layout_problem_info, urlFillIn)
+        views.setOnClickFillInIntent(R.id.item_root, urlFillIn)
 
         return views
     }

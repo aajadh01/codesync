@@ -75,21 +75,28 @@ class RandomChallengeWidgetProvider : AppWidgetProvider() {
             ACTION_MARK_SOLVED -> {
                 val problemId = intent.getStringExtra("EXTRA_PROBLEM_ID")
                 if (!problemId.isNullOrEmpty() && !problemId.startsWith("fallback-")) {
+                    val pendingResult = goAsync()
                     CoroutineScope(Dispatchers.IO).launch {
-                        val result = ApiClient.toggleProblemSolve(context, problemId)
-                        if (result.isSuccess) {
+                        try {
+                            val result = ApiClient.toggleProblemSolve(context, problemId)
                             CoroutineScope(Dispatchers.Main).launch {
-                                Toast.makeText(context, "Challenge solved! 🚀", Toast.LENGTH_SHORT).show()
+                                if (result.isSuccess) {
+                                    Toast.makeText(context, "Challenge solved! 🚀", Toast.LENGTH_SHORT).show()
+                                    val appWidgetManager = AppWidgetManager.getInstance(context)
+                                    if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                                        updateAppWidget(context, appWidgetManager, appWidgetId, fetchNext = false)
+                                    }
+                                    WidgetSyncWorker.enqueueImmediateSync(context)
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        result.exceptionOrNull()?.message ?: "Failed to update",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
-                            WidgetSyncWorker.enqueueImmediateSync(context)
-                        } else {
-                            CoroutineScope(Dispatchers.Main).launch {
-                                Toast.makeText(
-                                    context,
-                                    result.exceptionOrNull()?.message ?: "Failed to update",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                        } finally {
+                            pendingResult.finish()
                         }
                     }
                 } else if (problemId?.startsWith("fallback-") == true) {

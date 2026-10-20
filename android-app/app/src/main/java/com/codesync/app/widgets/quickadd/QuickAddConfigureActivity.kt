@@ -101,11 +101,9 @@ class QuickAddConfigureActivity : AppCompatActivity() {
             val selected = lists[position]
             AuthStorage.setWidgetListId(this, appWidgetId, selected.id, selected.name)
 
-            val updateIntent = Intent(this, QuickAddWidgetProvider::class.java).apply {
-                action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
-            }
-            sendBroadcast(updateIntent)
+            // Directly push RemoteViews update before returning
+            val appWidgetManager = AppWidgetManager.getInstance(this)
+            QuickAddWidgetProvider.updateAppWidget(this, appWidgetManager, appWidgetId)
 
             val resultValue = Intent().apply {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
