@@ -74,4 +74,7 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.swiperefreshlayout)
+    implementation(libs.androidx.work)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.coroutines)
 }

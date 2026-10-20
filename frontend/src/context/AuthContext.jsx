@@ -15,10 +15,16 @@ export const AuthProvider = ({ children }) => {
         try {
           const res = await api.get('/auth/me');
           setUser(res.data);
+          if (window.CodeSyncNative?.syncAuth) {
+            window.CodeSyncNative.syncAuth(token, res.data._id, res.data.username);
+          }
         } catch (error) {
           console.error('Failed to load user with token:', error);
           // Token is invalid/expired
           localStorage.removeItem('codesync_token');
+          if (window.CodeSyncNative?.logout) {
+            window.CodeSyncNative.logout();
+          }
           setUser(null);
         }
       }
@@ -45,6 +51,9 @@ export const AuthProvider = ({ children }) => {
         email: res.data.email,
         avatar: res.data.avatar,
       });
+      if (window.CodeSyncNative?.syncAuth) {
+        window.CodeSyncNative.syncAuth(res.data.token, res.data._id, res.data.username);
+      }
       setLoading(false);
       return { success: true };
     } catch (error) {
@@ -68,6 +77,9 @@ export const AuthProvider = ({ children }) => {
         email: res.data.email,
         avatar: res.data.avatar,
       });
+      if (window.CodeSyncNative?.syncAuth) {
+        window.CodeSyncNative.syncAuth(res.data.token, res.data._id, res.data.username);
+      }
       setLoading(false);
       return { success: true };
     } catch (error) {
@@ -82,6 +94,9 @@ export const AuthProvider = ({ children }) => {
   // Logout user
   const logout = () => {
     localStorage.removeItem('codesync_token');
+    if (window.CodeSyncNative?.logout) {
+      window.CodeSyncNative.logout();
+    }
     setUser(null);
   };
 

@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -29,6 +30,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.codesync.app.auth.AuthStorage
+import com.codesync.app.sync.WidgetSyncWorker
 
 class MainActivity : AppCompatActivity() {
 
@@ -60,6 +63,9 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         setupSwipeRefresh()
         setupBackNavigation()
+
+        AuthStorage.setServerUrl(this, getServerUrl())
+        WidgetSyncWorker.schedulePeriodicSync(this)
 
         loadServerUrl()
     }
@@ -118,6 +124,8 @@ class MainActivity : AppCompatActivity() {
         }
         CookieManager.getInstance().setAcceptCookie(true)
 
+        webView.addJavascriptInterface(NativeAuthBridge(), "CodeSyncNative")
+
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 if (newProgress < 100) {
@@ -156,6 +164,12 @@ class MainActivity : AppCompatActivity() {
                     hideSplashWithAnimation()
                 }
                 errorOverlay.visibility = View.GONE
+
+                // Probe and sync existing session token from localStorage if present
+                view?.evaluateJavascript(
+                    "(function() { try { var token = localStorage.getItem('codesync_token'); if (token && window.CodeSyncNative) { window.CodeSyncNative.syncAuth(token, '', ''); } } catch(e){} })();",
+                    null
+                )
             }
 
             override fun onReceivedError(
@@ -344,5 +358,22 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         webView.destroy()
         super.onDestroy()
+    }
+
+    inner class NativeAuthBridge {
+        @JavascriptInterface
+        fun syncAuth(token: String?, userId: String?, username: String?) {
+            if (!token.isNullOrEmpty()) {
+                val cleanToken = token.trim().removeSurrounding("\"")
+                AuthStorage.saveAuth(this@MainActivity, cleanToken, userId, username)
+                WidgetSyncWorker.enqueueImmediateSync(this@MainActivity)
+            }
+        }
+
+        @JavascriptInterface
+        fun logout() {
+            AuthStorage.clearAuth(this@MainActivity)
+            WidgetSyncWorker.enqueueImmediateSync(this@MainActivity)
+        }
     }
 }

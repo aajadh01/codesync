@@ -11,4 +11,28 @@
     <string name="btn_save">Save &amp; Reload</string>
     <string name="btn_cancel">Cancel</string>
     <string name="exit_toast">Press back again to exit CodeSync</string>
+
+    <!-- Widget Titles & Descriptions -->
+    <string name="widget_quick_solve_name">CodeSync: Quick Solve</string>
+    <string name="widget_quick_solve_desc">Track and toggle solved LeetCode problems in your shared list directly from your home screen.</string>
+    <string name="widget_quick_add_name">CodeSync: Quick Add</string>
+    <string name="widget_quick_add_desc">One-tap quick add for LeetCode problems into your study group.</string>
+    <string name="widget_group_focus_name">CodeSync: Group Focus</string>
+    <string name="widget_group_focus_desc">Track group completion, pending problems, and quick add.</string>
+    <string name="widget_daily_mission_name">CodeSync: Daily DSA Mission</string>
+    <string name="widget_daily_mission_desc">Track daily coding targets, solved counts, and next challenge.</string>
+    <string name="widget_random_challenge_name">CodeSync: Random Challenge</string>
+    <string name="widget_random_challenge_desc">Instant random LeetCode problem filtered by topic and difficulty.</string>
+    <string name="widget_leaderboard_name">CodeSync: Group Leaderboard</string>
+    <string name="widget_leaderboard_desc">Top member rankings and solved problem stats for your group.</string>
+
+    <!-- Widget Common Strings -->
+    <string name="widget_not_logged_in">Tap to open CodeSync and sign in</string>
+    <string name="widget_loading">Loading data…</string>
+    <string name="widget_empty_problems">No problems in this list yet</string>
+    <string name="widget_empty_lists">No lists found. Open app to create or join one</string>
+    <string name="widget_btn_refresh">Refresh</string>
+    <string name="widget_btn_add">Add</string>
+    <string name="widget_btn_solve">Solve</string>
+    <string name="widget_btn_next">Next</string>
 </resources>

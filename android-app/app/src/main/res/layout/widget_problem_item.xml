@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/item_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/bg_widget_item"
+    android:padding="8dp"
+    android:layout_marginBottom="4dp">
+
+    <!-- Interactive Solve Checkbox -->
+    <ImageView
+        android:id="@+id/btn_checkbox"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:padding="2dp"
+        android:src="@drawable/ic_check_empty"
+        android:contentDescription="@string/widget_btn_solve" />
+
+    <LinearLayout
+        android:id="@+id/layout_problem_info"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <TextView
+            android:id="@+id/tv_problem_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Two Sum"
+            android:textColor="@color/text_white"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:ellipsize="end"
+            android:maxLines="1" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tv_problem_difficulty"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Easy"
+                android:textColor="@color/diff_easy"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_pill_easy"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="1dp"
+                android:paddingBottom="1dp" />
+
+            <TextView
+                android:id="@+id/tv_problem_topic"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Array"
+                android:textColor="@color/accent"
+                android:textSize="10sp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_pill_topic"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="1dp"
+                android:paddingBottom="1dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- LeetCode External Link Button -->
+    <ImageView
+        android:id="@+id/btn_open_leetcode"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:padding="4dp"
+        android:src="@drawable/ic_open_in_new"
+        android:contentDescription="Open in LeetCode" />
+
+</LinearLayout>

@@ -30,6 +30,12 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: 'avatar1', // We will support avatar1 to avatar8, which correspond to beautiful preset SVG avatars or Dicebear seeds
     },
+    dailyTarget: {
+      type: Number,
+      default: 3,
+      min: [1, 'Daily target must be at least 1'],
+      max: [50, 'Daily target cannot exceed 50'],
+    },
   },
   {
     timestamps: true,

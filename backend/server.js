@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const listRoutes = require('./routes/lists');
 const problemRoutes = require('./routes/problems');
 const userRoutes = require('./routes/users');
+const widgetRoutes = require('./routes/widgets');
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/lists', listRoutes);
 app.use('/api/problems', problemRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/widgets', widgetRoutes);
 
 // Basic health check route
 app.get('/health', (req, res) => {

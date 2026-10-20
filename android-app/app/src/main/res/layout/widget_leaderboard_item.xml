@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/bg_widget_item"
+    android:padding="7dp"
+    android:layout_marginBottom="3dp">
+
+    <!-- Rank Badge -->
+    <TextView
+        android:id="@+id/tv_rank"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:gravity="center"
+        android:text="1"
+        android:textColor="@color/diff_medium"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:background="@drawable/bg_pill_medium" />
+
+    <!-- Username -->
+    <TextView
+        android:id="@+id/tv_username"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:text="leetcode_champ"
+        android:textColor="@color/text_white"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <!-- Solved Count -->
+    <TextView
+        android:id="@+id/tv_total_solved"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="15 Solved"
+        android:textColor="@color/diff_easy"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:background="@drawable/bg_pill_easy"
+        android:paddingStart="7dp"
+        android:paddingEnd="7dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp" />
+
+</LinearLayout>

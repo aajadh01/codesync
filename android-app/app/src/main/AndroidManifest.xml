@@ -14,6 +14,7 @@
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
+        <!-- Main WebView App Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -25,6 +26,183 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Native Quick Add Problem Activity -->
+        <activity
+            android:name=".widgets.quickadd.QuickAddActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.CodeSync" />
+
+        <!-- Widget 1: Quick Solve Configuration -->
+        <activity
+            android:name=".widgets.quicksolve.QuickSolveConfigureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CodeSync">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Widget 2: Quick Add Configuration -->
+        <activity
+            android:name=".widgets.quickadd.QuickAddConfigureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CodeSync">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Widget 3: Group Focus Configuration -->
+        <activity
+            android:name=".widgets.groupfocus.GroupFocusConfigureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CodeSync">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Widget 4: Daily Mission Configuration -->
+        <activity
+            android:name=".widgets.dailymission.DailyMissionConfigureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CodeSync">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Widget 5: Random Challenge Configuration -->
+        <activity
+            android:name=".widgets.randomchallenge.RandomChallengeConfigureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CodeSync">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Widget 6: Group Leaderboard Configuration -->
+        <activity
+            android:name=".widgets.leaderboard.GroupLeaderboardConfigureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CodeSync">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- ================= APP WIDGET PROVIDERS ================= -->
+
+        <!-- 1. Quick Solve Widget -->
+        <receiver
+            android:name=".widgets.quicksolve.QuickSolveWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_quick_solve_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.codesync.app.quicksolve.ACTION_ITEM_CLICK" />
+                <action android:name="com.codesync.app.quicksolve.ACTION_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_solve_info" />
+        </receiver>
+
+        <!-- 2. Quick Add Widget -->
+        <receiver
+            android:name=".widgets.quickadd.QuickAddWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_quick_add_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_add_info" />
+        </receiver>
+
+        <!-- 3. Group Focus Widget -->
+        <receiver
+            android:name=".widgets.groupfocus.GroupFocusWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_group_focus_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.codesync.app.groupfocus.ACTION_ITEM_CLICK" />
+                <action android:name="com.codesync.app.groupfocus.ACTION_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_group_focus_info" />
+        </receiver>
+
+        <!-- 4. Daily Mission Widget -->
+        <receiver
+            android:name=".widgets.dailymission.DailyMissionWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_daily_mission_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.codesync.app.dailymission.ACTION_MARK_SOLVED" />
+                <action android:name="com.codesync.app.dailymission.ACTION_REFRESH" />
+                <action android:name="com.codesync.app.dailymission.ACTION_OPEN_URL" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_daily_mission_info" />
+        </receiver>
+
+        <!-- 5. Random Challenge Widget -->
+        <receiver
+            android:name=".widgets.randomchallenge.RandomChallengeWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_random_challenge_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.codesync.app.randomchallenge.ACTION_NEXT" />
+                <action android:name="com.codesync.app.randomchallenge.ACTION_OPEN_URL" />
+                <action android:name="com.codesync.app.randomchallenge.ACTION_MARK_SOLVED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_random_challenge_info" />
+        </receiver>
+
+        <!-- 6. Group Leaderboard Widget -->
+        <receiver
+            android:name=".widgets.leaderboard.GroupLeaderboardWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_leaderboard_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.codesync.app.leaderboard.ACTION_REFRESH" />
+                <action android:name="com.codesync.app.leaderboard.ACTION_ITEM_CLICK" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_group_leaderboard_info" />
+        </receiver>
+
+        <!-- ================= REMOTE VIEWS SERVICES ================= -->
+
+        <service
+            android:name=".widgets.quicksolve.QuickSolveService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
+        <service
+            android:name=".widgets.groupfocus.GroupFocusService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
+        <service
+            android:name=".widgets.leaderboard.GroupLeaderboardService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
     </application>
 
 </manifest>

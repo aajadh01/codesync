@@ -1,5 +1,6 @@
 const Problem = require('../models/Problem');
 const List = require('../models/List');
+const SolveEvent = require('../models/SolveEvent');
 
 // Helper to normalize LeetCode URLs for duplicate checking
 const normalizeUrl = (urlStr) => {
@@ -123,13 +124,26 @@ const toggleSolved = async (req, res) => {
     }
 
     const solvedIndex = problem.solvedBy.indexOf(req.user._id);
+    let isNowSolved = false;
     
     if (solvedIndex > -1) {
       // User already solved, so unmark (remove user)
       problem.solvedBy.splice(solvedIndex, 1);
+      await SolveEvent.deleteOne({ user: req.user._id, problem: problem._id });
     } else {
       // User did not solve, so mark (add user)
       problem.solvedBy.push(req.user._id);
+      isNowSolved = true;
+      await SolveEvent.findOneAndUpdate(
+        { user: req.user._id, problem: problem._id },
+        {
+          user: req.user._id,
+          problem: problem._id,
+          list: problem.list,
+          solvedAt: new Date(),
+        },
+        { upsert: true, new: true }
+      );
     }
 
     await problem.save();
