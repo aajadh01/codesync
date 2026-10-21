@@ -1,17 +1,25 @@
 package com.codesync.app
 
 import android.annotation.SuppressLint
+import android.app.ActivityManager
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -27,6 +35,7 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -48,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private var isFirstLoad = true
 
     companion object {
+        private const val TAG = "CodeSyncMainActivity"
         private const val PREFS_NAME = "codesync_prefs"
         private const val KEY_SERVER_URL = "server_url"
     }
@@ -56,29 +66,50 @@ class MainActivity : AppCompatActivity() {
         // Apply main theme before setContentView to clear splash window background
         setTheme(R.style.Theme_CodeSync)
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+
+        try {
+            setContentView(R.layout.activity_main)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Fatal layout inflation error during startup", t)
+            showFatalWebViewFallback(t)
+            return
+        }
 
         setupStatusBarAndNavigationBar()
         initViews()
-        setupWebView()
+
+        if (!initAndSetupWebView()) {
+            return
+        }
+
         setupSwipeRefresh()
         setupBackNavigation()
 
         AuthStorage.setServerUrl(this, getServerUrl())
-        WidgetSyncWorker.schedulePeriodicSync(this)
+
+        // Run background scheduling safely without blocking the critical UI launch path
+        try {
+            WidgetSyncWorker.schedulePeriodicSync(this)
+        } catch (e: Throwable) {
+            Log.w(TAG, "WorkManager periodic sync schedule warning: ${e.message}")
+        }
 
         loadServerUrl()
     }
 
     private fun setupStatusBarAndNavigationBar() {
-        window.statusBarColor = getColor(R.color.background_dark)
-        window.navigationBarColor = getColor(R.color.background_dark)
+        try {
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+            window.statusBarColor = ContextCompat.getColor(this, R.color.background_dark)
+            window.navigationBarColor = ContextCompat.getColor(this, R.color.background_dark)
 
-        WindowCompat.setDecorFitsSystemWindows(window, true)
-        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
-        // White/light icons on dark background
-        insetsController.isAppearanceLightStatusBars = false
-        insetsController.isAppearanceLightNavigationBars = false
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+            val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+            insetsController.isAppearanceLightStatusBars = false
+            insetsController.isAppearanceLightNavigationBars = false
+        } catch (e: Exception) {
+            Log.w(TAG, "StatusBar/NavigationBar styling error on this OEM ROM", e)
+        }
     }
 
     private fun initViews() {
@@ -93,6 +124,23 @@ class MainActivity : AppCompatActivity() {
 
         btnRetry.setOnClickListener {
             showSplash()
+            // If WebView was previously destroyed (e.g., following a renderer crash), re-attach a fresh one
+            if (webView.parent == null) {
+                try {
+                    val newWebView = WebView(this)
+                    newWebView.id = R.id.webView
+                    newWebView.layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    swipeRefreshLayout.addView(newWebView)
+                    webView = newWebView
+                    initAndSetupWebView()
+                } catch (t: Throwable) {
+                    showFatalWebViewFallback(t)
+                    return@setOnClickListener
+                }
+            }
             loadServerUrl()
         }
 
@@ -102,95 +150,144 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun setupWebView() {
-        webView.setBackgroundColor(getColor(R.color.background_dark))
-        // Disable WebView overscroll bounce to avoid touch jitter
-        webView.overScrollMode = View.OVER_SCROLL_NEVER
+    private fun initAndSetupWebView(): Boolean {
+        return try {
+            webView.setBackgroundColor(ContextCompat.getColor(this, R.color.background_dark))
+            webView.overScrollMode = View.OVER_SCROLL_NEVER
 
-        val settings: WebSettings = webView.settings
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.databaseEnabled = true
-        settings.cacheMode = WebSettings.LOAD_DEFAULT
-        settings.allowFileAccess = true
-        settings.allowContentAccess = true
-        settings.useWideViewPort = true
-        settings.loadWithOverviewMode = true
-        settings.setSupportZoom(false)
-        settings.displayZoomControls = false
-        settings.mediaPlaybackRequiresUserGesture = false
+            val settings: WebSettings = webView.settings
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            @Suppress("DEPRECATION")
+            settings.databaseEnabled = true
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
+            settings.allowFileAccess = true
+            settings.allowContentAccess = true
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            settings.setSupportZoom(false)
+            settings.displayZoomControls = false
+            settings.mediaPlaybackRequiresUserGesture = false
 
-        // Custom User Agent identifier for CodeSync native app
-        val defaultUserAgent = settings.userAgentString ?: ""
-        if (!defaultUserAgent.contains("CodeSyncApp")) {
-            settings.userAgentString = "$defaultUserAgent CodeSyncApp/1.0.0"
-        }
+            // Identify CodeSync native wrapper in user agent
+            val defaultUserAgent = settings.userAgentString ?: ""
+            if (!defaultUserAgent.contains("CodeSyncApp")) {
+                settings.userAgentString = "$defaultUserAgent CodeSyncApp/1.0.0"
+            }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
-        }
-        CookieManager.getInstance().setAcceptCookie(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+            }
+            CookieManager.getInstance().setAcceptCookie(true)
 
-        webView.addJavascriptInterface(NativeAuthBridge(), "CodeSyncNative")
+            // Optimize for low-RAM devices (e.g. older Vivo / MediaTek devices)
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            if (activityManager?.isLowRamDevice == true) {
+                Log.i(TAG, "Low-RAM device detected. Tuning WebView memory settings.")
+                webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            }
 
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                if (newProgress < 100) {
+            webView.addJavascriptInterface(NativeAuthBridge(), "CodeSyncNative")
+
+            webView.webChromeClient = object : WebChromeClient() {
+                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    if (newProgress < 100) {
+                        pageProgressBar.visibility = View.VISIBLE
+                        pageProgressBar.progress = newProgress
+                    } else {
+                        pageProgressBar.visibility = View.GONE
+                    }
+                }
+            }
+
+            webView.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val url = request?.url?.toString() ?: return false
+                    return handleUrlNavigation(url)
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                    if (url == null) return false
+                    return handleUrlNavigation(url)
+                }
+
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
                     pageProgressBar.visibility = View.VISIBLE
-                    pageProgressBar.progress = newProgress
-                } else {
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
                     pageProgressBar.visibility = View.GONE
+                    swipeRefreshLayout.isRefreshing = false
+
+                    if (isFirstLoad) {
+                        isFirstLoad = false
+                        hideSplashWithAnimation()
+                    }
+                    errorOverlay.visibility = View.GONE
+
+                    // Probe and sync existing session token from localStorage if present & mark in-app
+                    view?.evaluateJavascript(
+                        "(function() { try { window.isCodeSyncApp = true; localStorage.setItem('codesync_in_app', 'true'); var token = localStorage.getItem('codesync_token'); if (token && window.CodeSyncNative) { window.CodeSyncNative.syncAuth(token, '', ''); } } catch(e){} })();",
+                        null
+                    )
+                }
+
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: WebResourceError?
+                ) {
+                    super.onReceivedError(view, request, error)
+                    if (request?.isForMainFrame == true) {
+                        showError(error?.description?.toString())
+                    }
+                }
+
+                override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
+                    Log.e(TAG, "SSL Certificate Error: $error")
+                    handler?.cancel()
+                    showError("Secure connection error. Please verify your device date/time settings and network connection.")
+                }
+
+                // CRITICAL FOR LOW-RAM PHONES:
+                // Prevents the Android OS from terminating/killing the host app when the WebView renderer process crashes or is killed by LMK
+                override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                    val didCrash = detail?.didCrash() ?: false
+                    Log.e(TAG, "WebView render process exited! didCrash=$didCrash")
+
+                    // Cleanly remove dead WebView
+                    try {
+                        (view?.parent as? ViewGroup)?.removeView(view)
+                        view?.destroy()
+                    } catch (ignored: Exception) {}
+
+                    // Present user recovery UI instead of crashing the process
+                    runOnUiThread {
+                        showError("The web view ran out of memory or encountered a display error. Tap Retry to reload.")
+                    }
+
+                    // Returning true informs Android OS that the app handled the crash, preventing process termination!
+                    return true
                 }
             }
+
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to initialize Android System WebView", t)
+            showFatalWebViewFallback(t)
+            false
         }
+    }
 
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val url = request?.url?.toString() ?: return false
-                return handleUrlNavigation(url)
-            }
-
-            @Deprecated("Deprecated in Java")
-            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                if (url == null) return false
-                return handleUrlNavigation(url)
-            }
-
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                pageProgressBar.visibility = View.VISIBLE
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                pageProgressBar.visibility = View.GONE
-                swipeRefreshLayout.isRefreshing = false
-
-                if (isFirstLoad) {
-                    isFirstLoad = false
-                    hideSplashWithAnimation()
-                }
-                errorOverlay.visibility = View.GONE
-
-                // Probe and sync existing session token from localStorage if present & mark in-app
-                view?.evaluateJavascript(
-                    "(function() { try { window.isCodeSyncApp = true; localStorage.setItem('codesync_in_app', 'true'); var token = localStorage.getItem('codesync_token'); if (token && window.CodeSyncNative) { window.CodeSyncNative.syncAuth(token, '', ''); } } catch(e){} })();",
-                    null
-                )
-            }
-
-            override fun onReceivedError(
-                view: WebView?,
-                request: WebResourceRequest?,
-                error: WebResourceError?
-            ) {
-                super.onReceivedError(view, request, error)
-                // Only show fullscreen error if the main frame failed to load
-                if (request?.isForMainFrame == true) {
-                    showError(error?.description?.toString())
-                }
-            }
+    private fun showFatalWebViewFallback(error: Throwable) {
+        try {
+            showError("Android System WebView component is unavailable or updating: ${error.localizedMessage ?: "Unknown initialization error"}. Please update 'Android System WebView' or 'Google Chrome' from the Play Store and restart.")
+        } catch (e: Exception) {
+            Toast.makeText(this, "WebView error: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -252,7 +349,7 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
 
-                if (webView.canGoBack()) {
+                if (::webView.isInitialized && webView.parent != null && webView.canGoBack()) {
                     webView.goBack()
                 } else {
                     if (System.currentTimeMillis() - backPressedTime < 2000) {
@@ -272,8 +369,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val url = getServerUrl()
-        webView.loadUrl(url)
+        if (::webView.isInitialized && webView.parent != null) {
+            val url = getServerUrl()
+            webView.loadUrl(url)
+        }
     }
 
     private fun getServerUrl(): String {
@@ -295,8 +394,8 @@ class MainActivity : AppCompatActivity() {
         val input = EditText(this)
         input.setText(getServerUrl())
         input.setSelection(input.text.length)
-        input.setTextColor(getColor(R.color.text_white))
-        input.setHintTextColor(getColor(R.color.text_muted))
+        input.setTextColor(ContextCompat.getColor(this, R.color.text_white))
+        input.setHintTextColor(ContextCompat.getColor(this, R.color.text_muted))
         input.setBackgroundResource(R.drawable.bg_card)
         input.setPadding(32, 24, 32, 24)
 
@@ -350,24 +449,60 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isNetworkAvailable(): Boolean {
-        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val actNw = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return actNw.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val network = cm.activeNetwork ?: return false
+                val actNw = cm.getNetworkCapabilities(network) ?: return false
+                actNw.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            } else {
+                @Suppress("DEPRECATION")
+                val netInfo = cm.activeNetworkInfo
+                @Suppress("DEPRECATION")
+                netInfo != null && netInfo.isConnected
+            }
+        } catch (e: Exception) {
+            true // Fail open to avoid blocking legitimate launches
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            try {
+                if (::webView.isInitialized && webView.parent != null) {
+                    webView.clearCache(false)
+                }
+            } catch (ignored: Exception) {}
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        webView.onResume()
+        if (::webView.isInitialized && webView.parent != null) {
+            webView.onResume()
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        webView.onPause()
+        if (::webView.isInitialized && webView.parent != null) {
+            webView.onPause()
+        }
     }
 
     override fun onDestroy() {
-        webView.destroy()
+        try {
+            if (::webView.isInitialized) {
+                (webView.parent as? ViewGroup)?.removeView(webView)
+                webView.stopLoading()
+                webView.clearHistory()
+                webView.removeAllViews()
+                webView.destroy()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning up WebView in onDestroy", e)
+        }
         super.onDestroy()
     }
 
@@ -377,14 +512,22 @@ class MainActivity : AppCompatActivity() {
             if (!token.isNullOrEmpty()) {
                 val cleanToken = token.trim().removeSurrounding("\"")
                 AuthStorage.saveAuth(this@MainActivity, cleanToken, userId, username)
-                WidgetSyncWorker.enqueueImmediateSync(this@MainActivity)
+                try {
+                    WidgetSyncWorker.enqueueImmediateSync(this@MainActivity)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Sync enqueue error: ${e.message}")
+                }
             }
         }
 
         @JavascriptInterface
         fun logout() {
             AuthStorage.clearAuth(this@MainActivity)
-            WidgetSyncWorker.enqueueImmediateSync(this@MainActivity)
+            try {
+                WidgetSyncWorker.enqueueImmediateSync(this@MainActivity)
+            } catch (e: Exception) {
+                Log.w(TAG, "Logout sync enqueue error: ${e.message}")
+            }
         }
     }
 }

@@ -30,28 +30,40 @@ class WidgetSyncWorker(
         private const val PERIODIC_WORK_TAG = "codesync_widget_periodic_sync"
 
         fun schedulePeriodicSync(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
+            try {
+                val constraints = Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
 
-            // WorkManager minimum periodic interval is 15 minutes
-            val workRequest = PeriodicWorkRequestBuilder<WidgetSyncWorker>(15, TimeUnit.MINUTES)
-                .setConstraints(constraints)
-                .build()
+                // WorkManager minimum periodic interval is 15 minutes
+                val workRequest = PeriodicWorkRequestBuilder<WidgetSyncWorker>(15, TimeUnit.MINUTES)
+                    .setConstraints(constraints)
+                    .build()
 
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                PERIODIC_WORK_TAG,
-                ExistingPeriodicWorkPolicy.KEEP,
-                workRequest
-            )
+                WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                    PERIODIC_WORK_TAG,
+                    ExistingPeriodicWorkPolicy.KEEP,
+                    workRequest
+                )
+            } catch (e: Throwable) {
+                android.util.Log.w("WidgetSyncWorker", "schedulePeriodicSync warning: ${e.message}")
+            }
         }
 
         fun enqueueImmediateSync(context: Context) {
-            val oneTimeWork = OneTimeWorkRequestBuilder<WidgetSyncWorker>()
-                .build()
-            WorkManager.getInstance(context).enqueue(oneTimeWork)
+            try {
+                val oneTimeWork = OneTimeWorkRequestBuilder<WidgetSyncWorker>()
+                    .build()
+                WorkManager.getInstance(context).enqueue(oneTimeWork)
+            } catch (e: Throwable) {
+                android.util.Log.w("WidgetSyncWorker", "enqueueImmediateSync warning: ${e.message}")
+            }
             // Also notify immediately in case worker takes a few ms
-            notifyAllWidgets(context)
+            try {
+                notifyAllWidgets(context)
+            } catch (e: Throwable) {
+                android.util.Log.w("WidgetSyncWorker", "notifyAllWidgets warning: ${e.message}")
+            }
         }
 
         fun notifyAllWidgets(context: Context) {
