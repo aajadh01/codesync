@@ -54,7 +54,11 @@ data class ToggleSolveResult(
     val problemId: String,
     val isSolved: Boolean,
     val completedToday: Int,
-    val dailyTarget: Int
+    val dailyTarget: Int,
+    val listId: String = "",
+    val totalProblems: Int = 0,
+    val solvedCount: Int = 0,
+    val completionPercentage: Int = 0
 )
 
 data class LeetCodeProblemDetails(

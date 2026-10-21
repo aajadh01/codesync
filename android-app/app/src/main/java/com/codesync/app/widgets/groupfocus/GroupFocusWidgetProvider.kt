@@ -21,12 +21,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 
 class GroupFocusWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_ITEM_CLICK = "com.codesync.app.groupfocus.ACTION_ITEM_CLICK"
         const val ACTION_REFRESH = "com.codesync.app.groupfocus.ACTION_REFRESH"
+
+        // Deduplication set to prevent concurrent double-mutations on the same problem
+        private val inFlightMutations = ConcurrentHashMap.newKeySet<String>()
 
         fun updateAppWidget(
             context: Context,
@@ -79,11 +83,12 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
             views.setRemoteAdapter(R.id.lv_pending_problems, serviceIntent)
             views.setEmptyView(R.id.lv_pending_problems, R.id.tv_empty)
 
-            // PendingIntent template for ListView item clicks
+            // PendingIntent template for ListView item clicks with unique instance URI to prevent collisions
             val itemClickIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
                 action = ACTION_ITEM_CLICK
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                 putExtra("EXTRA_APPWIDGET_ID", appWidgetId)
+                this.data = Uri.parse("codesync://widget/itemclick/$appWidgetId")
             }
             val itemClickPi = PendingIntent.getBroadcast(
                 context,
@@ -226,10 +231,11 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
                                 views.setRemoteAdapter(R.id.lv_pending_problems, serviceIntent)
                                 views.setEmptyView(R.id.lv_pending_problems, R.id.tv_empty)
 
-                                // Item click PendingIntent template
+                                // Item click PendingIntent template with unique instance URI
                                 val itemClickIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
                                     action = ACTION_ITEM_CLICK
                                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                                    this.data = Uri.parse("codesync://widget/itemclick/$appWidgetId")
                                 }
                                 val itemClickPi = PendingIntent.getBroadcast(
                                     context,
@@ -342,26 +348,127 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
 
                 if (actionType == "TOGGLE_SOLVE") {
                     val problemId = intent.getStringExtra("EXTRA_PROBLEM_ID")
+                    val targetSolved = intent.getBooleanExtra("EXTRA_TARGET_SOLVED", true)
+
                     if (!problemId.isNullOrEmpty()) {
+                        // Prevent duplicate in-flight requests for same problem
+                        if (!inFlightMutations.add(problemId)) {
+                            return
+                        }
+
+                        if (!AuthStorage.isLoggedIn(context)) {
+                            inFlightMutations.remove(problemId)
+                            Toast.makeText(context, context.getString(R.string.widget_not_logged_in), Toast.LENGTH_LONG).show()
+                            if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                                updateAppWidget(context, AppWidgetManager.getInstance(context), appWidgetId)
+                            }
+                            return
+                        }
+
+                        val listId = AuthStorage.getWidgetListId(context, appWidgetId)
+                        var backupCache: String? = null
+
+                        // 1. OPTIMISTIC UPDATE: Update local cache immediately so checkbox ticks in 0ms!
+                        if (listId != null) {
+                            val cachedStr = AuthStorage.getWidgetCache(context, "gf_$listId")
+                            backupCache = cachedStr
+                            if (!cachedStr.isNullOrEmpty()) {
+                                try {
+                                    val obj = JSONObject(cachedStr)
+                                    val arr = obj.optJSONArray("problems") ?: JSONArray()
+                                    var found = false
+                                    for (i in 0 until arr.length()) {
+                                        val pObj = arr.getJSONObject(i)
+                                        if (pObj.optString("id") == problemId) {
+                                            pObj.put("isSolved", targetSolved)
+                                            found = true
+                                            break
+                                        }
+                                    }
+                                    if (found) {
+                                        var solvedCount = 0
+                                        for (i in 0 until arr.length()) {
+                                            if (arr.getJSONObject(i).optBoolean("isSolved")) solvedCount++
+                                        }
+                                        val totalProblems = arr.length()
+                                        val pct = if (totalProblems > 0) Math.round((solvedCount.toFloat() / totalProblems) * 100) else 0
+                                        obj.put("solvedCount", solvedCount)
+                                        obj.put("completionPercentage", pct)
+                                        AuthStorage.saveWidgetCache(context, "gf_$listId", obj.toString())
+
+                                        // Push optimistic UI update immediately
+                                        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                                            val appWidgetManager = AppWidgetManager.getInstance(context)
+                                            updateAppWidget(context, appWidgetManager, appWidgetId)
+                                            appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_pending_problems)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+
+                        // 2. Perform network mutation with explicit targetSolved state
                         val pendingResult = goAsync()
                         CoroutineScope(Dispatchers.IO).launch {
                             try {
-                                val result = ApiClient.toggleProblemSolve(context, problemId)
+                                val result = ApiClient.toggleProblemSolve(context, problemId, targetSolved)
                                 if (result.isSuccess) {
-                                    if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-                                        fetchAndUpdateWidget(context, appWidgetId)
+                                    val data = result.getOrNull()!!
+                                    // Authoritative update from backend response
+                                    if (listId != null) {
+                                        val cachedStr = AuthStorage.getWidgetCache(context, "gf_$listId")
+                                        if (!cachedStr.isNullOrEmpty()) {
+                                            try {
+                                                val obj = JSONObject(cachedStr)
+                                                if (data.totalProblems > 0) {
+                                                    obj.put("totalProblems", data.totalProblems)
+                                                    obj.put("solvedCount", data.solvedCount)
+                                                    obj.put("completionPercentage", data.completionPercentage)
+                                                }
+                                                val arr = obj.optJSONArray("problems") ?: JSONArray()
+                                                for (i in 0 until arr.length()) {
+                                                    val pObj = arr.getJSONObject(i)
+                                                    if (pObj.optString("id") == problemId) {
+                                                        pObj.put("isSolved", data.isSolved)
+                                                        break
+                                                    }
+                                                }
+                                                AuthStorage.saveWidgetCache(context, "gf_$listId", obj.toString())
+                                            } catch (ignored: Exception) {}
+                                        }
+                                    }
+
+                                    withContext(Dispatchers.Main) {
+                                        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                                            val appWidgetManager = AppWidgetManager.getInstance(context)
+                                            updateAppWidget(context, appWidgetManager, appWidgetId)
+                                            appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_pending_problems)
+                                        }
                                     }
                                     WidgetSyncWorker.enqueueImmediateSync(context)
                                 } else {
+                                    // ROLLBACK on failure
+                                    if (listId != null && backupCache != null) {
+                                        AuthStorage.saveWidgetCache(context, "gf_$listId", backupCache)
+                                    }
                                     withContext(Dispatchers.Main) {
-                                        Toast.makeText(
-                                            context,
-                                            result.exceptionOrNull()?.message ?: "Failed to update",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                                            val appWidgetManager = AppWidgetManager.getInstance(context)
+                                            updateAppWidget(context, appWidgetManager, appWidgetId)
+                                            appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_pending_problems)
+                                        }
+                                        val ex = result.exceptionOrNull()
+                                        if (ex is ApiClient.AuthException) {
+                                            Toast.makeText(context, ex.message ?: "Session expired. Please log in.", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, ex?.message ?: "Could not update status. Tap to retry.", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
                             } finally {
+                                inFlightMutations.remove(problemId)
                                 pendingResult.finish()
                             }
                         }

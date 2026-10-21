@@ -129,18 +129,23 @@ object ApiClient {
         }
     }
 
-    fun toggleProblemSolve(context: Context, problemId: String): Result<ToggleSolveResult> {
+    fun toggleProblemSolve(context: Context, problemId: String, solved: Boolean? = null): Result<ToggleSolveResult> {
         return try {
             val url = "${getBaseUrl(context)}/widgets/solve-toggle"
-            val payload = JSONObject().apply { put("problemId", problemId) }
+            val payload = JSONObject().apply {
+                put("problemId", problemId)
+                if (solved != null) {
+                    put("solved", solved)
+                }
+            }
             val request = buildRequest(context, url, "POST", payload.toString())
 
             client.newCall(request).execute().use { response ->
                 if (response.code == 401 || response.code == 403) {
-                    return Result.failure(AuthException("Authentication required"))
+                    return Result.failure(AuthException("Session expired. Please open CodeSync and log in."))
                 }
                 if (!response.isSuccessful) {
-                    return Result.failure(IOException("Failed to toggle solve: HTTP ${response.code}"))
+                    return Result.failure(IOException("Failed to update solve: HTTP ${response.code}"))
                 }
                 val bodyStr = response.body?.string() ?: ""
                 val json = JSONObject(bodyStr)
@@ -150,7 +155,11 @@ object ApiClient {
                         problemId = json.getString("problemId"),
                         isSolved = json.optBoolean("isSolved", false),
                         completedToday = json.optInt("completedToday", 0),
-                        dailyTarget = json.optInt("dailyTarget", 3)
+                        dailyTarget = json.optInt("dailyTarget", 3),
+                        listId = json.optString("listId", ""),
+                        totalProblems = json.optInt("totalProblems", 0),
+                        solvedCount = json.optInt("solvedCount", 0),
+                        completionPercentage = json.optInt("completionPercentage", 0)
                     )
                 )
             }

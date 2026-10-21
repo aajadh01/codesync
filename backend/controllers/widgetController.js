@@ -145,13 +145,13 @@ const getListDetails = async (req, res) => {
   }
 };
 
-// @desc    Toggle problem solve status from a widget
+// @desc    Toggle or explicitly set solved status for a problem (Idempotent for widgets)
 // @route   POST /api/widgets/solve-toggle
 // @access  Private
 const toggleProblemSolve = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { problemId } = req.body;
+    const { problemId, solved } = req.body;
 
     if (!problemId) {
       return res.status(400).json({ message: 'problemId is required' });
@@ -164,18 +164,17 @@ const toggleProblemSolve = async (req, res) => {
 
     const list = await List.findById(problem.list);
     if (!list || !list.members.some((m) => m.toString() === userId.toString())) {
-      return res.status(403).json({ message: 'Access denied to this problem' });
+      return res.status(403).json({ message: 'Access denied: You are not a member of this list' });
     }
 
     const solvedIndex = problem.solvedBy.indexOf(userId);
-    let isSolved = false;
+    const currentlySolved = solvedIndex > -1;
 
-    if (solvedIndex > -1) {
-      problem.solvedBy.splice(solvedIndex, 1);
-      await SolveEvent.deleteOne({ user: userId, problem: problem._id });
-    } else {
+    // Idempotent target state: if explicit boolean 'solved' is provided, honor it; otherwise toggle
+    const shouldBeSolved = typeof solved === 'boolean' ? solved : !currentlySolved;
+
+    if (shouldBeSolved && !currentlySolved) {
       problem.solvedBy.push(userId);
-      isSolved = true;
       await SolveEvent.findOneAndUpdate(
         { user: userId, problem: problem._id },
         {
@@ -186,9 +185,21 @@ const toggleProblemSolve = async (req, res) => {
         },
         { upsert: true, new: true }
       );
+      await problem.save();
+    } else if (!shouldBeSolved && currentlySolved) {
+      problem.solvedBy.splice(solvedIndex, 1);
+      await SolveEvent.deleteOne({ user: userId, problem: problem._id });
+      await problem.save();
     }
+    // If shouldBeSolved === currentlySolved, state is already reached (idempotent no-op!)
 
-    await problem.save();
+    // Calculate updated list statistics
+    const listProblems = await Problem.find({ list: problem.list });
+    const totalProblems = listProblems.length;
+    const solvedCount = listProblems.filter((p) =>
+      p.solvedBy.some((uid) => uid.toString() === userId.toString())
+    ).length;
+    const completionPercentage = totalProblems > 0 ? Math.round((solvedCount / totalProblems) * 100) : 0;
 
     // Calculate today's solved count
     const { start, end } = getTodayRange();
@@ -200,16 +211,20 @@ const toggleProblemSolve = async (req, res) => {
     const user = await User.findById(userId);
     const dailyTarget = user?.dailyTarget || 3;
 
-    res.json({
+    return res.json({
       success: true,
       problemId: problem._id.toString(),
-      isSolved,
+      isSolved: shouldBeSolved,
+      listId: problem.list.toString(),
+      totalProblems,
+      solvedCount,
+      completionPercentage,
       completedToday,
       dailyTarget,
     });
   } catch (error) {
     console.error('Widget toggleProblemSolve error:', error);
-    res.status(500).json({ message: 'Failed to toggle solve state' });
+    res.status(500).json({ message: 'Failed to update solve state' });
   }
 };
 

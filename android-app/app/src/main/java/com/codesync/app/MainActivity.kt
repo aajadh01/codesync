@@ -104,6 +104,8 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
         webView.setBackgroundColor(getColor(R.color.background_dark))
+        // Disable WebView overscroll bounce to avoid touch jitter
+        webView.overScrollMode = View.OVER_SCROLL_NEVER
 
         val settings: WebSettings = webView.settings
         settings.javaScriptEnabled = true
@@ -234,6 +236,9 @@ class MainActivity : AppCompatActivity() {
     private fun setupSwipeRefresh() {
         swipeRefreshLayout.setColorSchemeResources(R.color.primary, R.color.accent)
         swipeRefreshLayout.setProgressBackgroundColorSchemeResource(R.color.surface_dark)
+        // Permanently disable swipeRefreshLayout gesture interception so that normal
+        // user scrolling and swiping upward inside the WebView never triggers an accidental page reload.
+        swipeRefreshLayout.isEnabled = false
         swipeRefreshLayout.setOnRefreshListener {
             webView.reload()
         }

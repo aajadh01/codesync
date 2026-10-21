@@ -163,6 +163,7 @@ class GroupFocusViewsFactory(
         val toggleFillIn = Intent().apply {
             putExtra("EXTRA_ACTION_TYPE", "TOGGLE_SOLVE")
             putExtra("EXTRA_PROBLEM_ID", problem.id)
+            putExtra("EXTRA_TARGET_SOLVED", !problem.isSolved)
             putExtra("EXTRA_APPWIDGET_ID", appWidgetId)
         }
         views.setOnClickFillInIntent(R.id.btn_checkbox, toggleFillIn)
