@@ -33,6 +33,7 @@ class GroupLeaderboardWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.tv_unauth_banner, View.VISIBLE)
             val loginIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("target_path", "/auth")
             }
             val loginPi = PendingIntent.getActivity(
                 context,
@@ -81,6 +82,7 @@ class GroupLeaderboardWidgetProvider : AppWidgetProvider() {
         // View Full Leaderboard in app Action
         val fullLbIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("target_path", "/leaderboard")
         }
         val fullLbPi = PendingIntent.getActivity(
             context,
@@ -142,6 +144,7 @@ class GroupLeaderboardWidgetProvider : AppWidgetProvider() {
             ACTION_ITEM_CLICK -> {
                 val openIntent = Intent(context, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("target_path", "/leaderboard")
                 }
                 context.startActivity(openIntent)
             }

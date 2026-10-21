@@ -1,12 +1,16 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import Avatar, { avatarsList } from '../components/Avatar';
+import { isCodeSyncNativeApp } from '../utils/isNativeApp';
 import { Code2, Mail, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
 
 const Auth = () => {
   const { user, login, register, loading } = useContext(AuthContext);
   const navigate = useNavigate();
+  const location = useLocation();
+  const inApp = isCodeSyncNativeApp();
+  const from = location.state?.from?.pathname || '/dashboard';
 
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState('');
@@ -21,9 +25,9 @@ const Auth = () => {
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      navigate('/dashboard');
+      navigate(from, { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, from]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -33,7 +37,7 @@ const Auth = () => {
     if (isLogin) {
       const res = await login(email, password);
       if (res.success) {
-        navigate('/dashboard');
+        navigate(from, { replace: true });
       } else {
         setError(res.message);
       }
@@ -50,7 +54,7 @@ const Auth = () => {
       }
       const res = await register(username, email, password, selectedAvatar);
       if (res.success) {
-        navigate('/dashboard');
+        navigate(from, { replace: true });
       } else {
         setError(res.message);
       }
@@ -65,12 +69,21 @@ const Auth = () => {
       <div className="absolute bottom-1/4 right-1/3 w-[300px] h-[300px] bg-blue-500/10 rounded-full blur-3xl -z-10 pointer-events-none" />
 
       {/* Brand logo back link */}
-      <Link to="/" className="flex items-center gap-2 mb-8 group">
-        <Code2 className="w-8 h-8 text-indigo-500 group-hover:scale-110 transition-transform" />
-        <span className="text-2xl font-extrabold tracking-wider bg-gradient-to-r from-indigo-400 to-blue-500 bg-clip-text text-transparent">
-          CODESYNC
-        </span>
-      </Link>
+      {inApp ? (
+        <div className="flex items-center gap-2 mb-8 select-none">
+          <Code2 className="w-8 h-8 text-indigo-500" />
+          <span className="text-2xl font-extrabold tracking-wider bg-gradient-to-r from-indigo-400 to-blue-500 bg-clip-text text-transparent">
+            CODESYNC
+          </span>
+        </div>
+      ) : (
+        <Link to="/" className="flex items-center gap-2 mb-8 group">
+          <Code2 className="w-8 h-8 text-indigo-500 group-hover:scale-110 transition-transform" />
+          <span className="text-2xl font-extrabold tracking-wider bg-gradient-to-r from-indigo-400 to-blue-500 bg-clip-text text-transparent">
+            CODESYNC
+          </span>
+        </Link>
+      )}
 
       {/* Glowing Outer Card */}
       <div className="w-full max-w-lg bg-dark-card border border-dark-border/80 rounded-2xl p-8 shadow-2xl relative overflow-hidden">

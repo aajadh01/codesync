@@ -94,7 +94,7 @@ class MainActivity : AppCompatActivity() {
             Log.w(TAG, "WorkManager periodic sync schedule warning: ${e.message}")
         }
 
-        loadServerUrl()
+        loadServerUrl(intent)
     }
 
     private fun setupStatusBarAndNavigationBar() {
@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
             }
-            loadServerUrl()
+            loadServerUrl(intent)
         }
 
         btnConfigServer.setOnClickListener {
@@ -408,15 +408,55 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun loadServerUrl() {
+    private fun getTargetUrl(intent: Intent?): String {
+        val serverBase = getServerUrl().trimEnd('/')
+
+        // 1. Check explicit target_path extra (e.g. "/lists/123", "/dashboard", "/auth")
+        val targetPath = intent?.getStringExtra("target_path")
+        if (!targetPath.isNullOrEmpty()) {
+            val normalizedPath = if (targetPath.startsWith("/")) targetPath else "/$targetPath"
+            return "$serverBase$normalizedPath"
+        }
+
+        // 2. Check explicit target_url extra
+        val targetUrl = intent?.getStringExtra("target_url")
+        if (!targetUrl.isNullOrEmpty()) {
+            return targetUrl
+        }
+
+        // 3. Check Intent data URI (e.g. deep link: https://codesyncs.dev/lists/123)
+        val dataUri = intent?.data
+        if (dataUri != null) {
+            val path = dataUri.path
+            if (!path.isNullOrEmpty() && path != "/") {
+                val query = dataUri.query?.let { "?$it" } ?: ""
+                return "$serverBase$path$query"
+            }
+        }
+
+        // 4. Default entry point for CodeSync Android Native app: /app
+        // /app evaluates session and navigates directly to /dashboard or /auth without landing-page flash
+        return "$serverBase/app"
+    }
+
+    private fun loadServerUrl(intent: Intent? = getIntent()) {
         if (!isNetworkAvailable()) {
             showError("No internet connection available. Please connect to Wi-Fi or mobile data.")
             return
         }
 
         if (::webView.isInitialized && webView.parent != null) {
-            val url = getServerUrl()
+            val url = getTargetUrl(intent)
+            Log.d(TAG, "Loading startup/target URL: $url")
             webView.loadUrl(url)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.hasExtra("target_path") || intent.hasExtra("target_url") || intent.data != null) {
+            loadServerUrl(intent)
         }
     }
 
@@ -457,7 +497,7 @@ class MainActivity : AppCompatActivity() {
                 if (newUrl.isNotEmpty()) {
                     setServerUrl(newUrl)
                     showSplash()
-                    loadServerUrl()
+                    loadServerUrl(intent)
                 }
             }
             .setNegativeButton(getString(R.string.btn_cancel), null)

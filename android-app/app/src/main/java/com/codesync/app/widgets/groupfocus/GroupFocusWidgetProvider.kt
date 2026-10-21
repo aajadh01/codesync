@@ -48,6 +48,7 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(R.id.tv_unauth_banner, View.VISIBLE)
                 val loginIntent = Intent(context, MainActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("target_path", "/auth")
                 }
                 val loginPi = PendingIntent.getActivity(
                     context,
@@ -143,6 +144,11 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
             // Open List Action
             val openListIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                if (!listId.isNullOrEmpty()) {
+                    putExtra("target_path", "/lists/$listId")
+                } else {
+                    putExtra("target_path", "/lists")
+                }
             }
             val openListPi = PendingIntent.getActivity(
                 context,
@@ -300,6 +306,11 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
                                 // Open List action
                                 val openListIntent = Intent(context, MainActivity::class.java).apply {
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                    if (!listId.isNullOrEmpty()) {
+                                        putExtra("target_path", "/lists/$listId")
+                                    } else {
+                                        putExtra("target_path", "/lists")
+                                    }
                                 }
                                 val openListPi = PendingIntent.getActivity(
                                     context,

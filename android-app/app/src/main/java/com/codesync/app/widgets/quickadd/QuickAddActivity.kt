@@ -55,7 +55,10 @@ class QuickAddActivity : AppCompatActivity() {
 
         if (!AuthStorage.isLoggedIn(this)) {
             Toast.makeText(this, getString(R.string.widget_not_logged_in), Toast.LENGTH_LONG).show()
-            startActivity(Intent(this, MainActivity::class.java))
+            val loginIntent = Intent(this, MainActivity::class.java).apply {
+                putExtra("target_path", "/auth")
+            }
+            startActivity(loginIntent)
             finish()
             return
         }

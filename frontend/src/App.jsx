@@ -1,7 +1,9 @@
 import React, { useContext } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import Layout from './components/Layout';
+import AppLoadingScreen from './components/AppLoadingScreen';
+import AppNetworkErrorScreen from './components/AppNetworkErrorScreen';
 import { isCodeSyncNativeApp } from './utils/isNativeApp';
 
 // Pages
@@ -13,44 +15,74 @@ import ListDetails from './pages/ListDetails';
 import Leaderboard from './pages/Leaderboard';
 import Profile from './pages/Profile';
 
-// Helper component for protecting private routes
+/**
+ * ProtectedRoute: Enforces authentication and authorization for private app screens.
+ * Passes the attempted location so user can be returned there after signing in.
+ */
 const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useContext(AuthContext);
+  const { user, loading, authError, retryAuth, logout } = useContext(AuthContext);
+  const location = useLocation();
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-dark-base text-zinc-100">
-        <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
-      </div>
-    );
+    return <AppLoadingScreen />;
+  }
+
+  if (authError === 'network') {
+    return <AppNetworkErrorScreen onRetry={retryAuth} onLogout={logout} />;
   }
 
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/auth" state={{ from: location }} replace />;
   }
 
   return <Layout>{children}</Layout>;
 };
 
-// Smart Root Route: Directs native Android app to app views, and Web to landing/dashboard
+/**
+ * Dedicated App Entry Route (/app) for the native Android wrapper and mobile deep links.
+ * 1. Restoring session / loading -> AppLoadingScreen
+ * 2. Network failure -> AppNetworkErrorScreen (preserves local session)
+ * 3. Valid authenticated user -> /dashboard
+ * 4. Unauthenticated / expired -> /auth (Sign In)
+ * Zero flash of the public landing page!
+ */
+const AppEntryRoute = () => {
+  const { user, loading, authError, retryAuth, logout } = useContext(AuthContext);
+
+  if (loading) {
+    return <AppLoadingScreen />;
+  }
+
+  if (authError === 'network') {
+    return <AppNetworkErrorScreen onRetry={retryAuth} onLogout={logout} />;
+  }
+
+  return user ? <Navigate to="/dashboard" replace /> : <Navigate to="/auth" replace />;
+};
+
+/**
+ * Root Route (/):
+ * - If inside the native Android App: automatically routes to /dashboard or /auth (never lands on marketing page).
+ * - If in standard desktop/mobile Web browser:
+ *   - Authenticated: routes directly to /dashboard.
+ *   - Unauthenticated: displays the public marketing Landing page.
+ */
 const RootRoute = () => {
-  const { user, loading } = useContext(AuthContext);
+  const { user, loading, authError, retryAuth, logout } = useContext(AuthContext);
   const inApp = isCodeSyncNativeApp();
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-dark-base text-zinc-100">
-        <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
-      </div>
-    );
+    return <AppLoadingScreen />;
   }
 
-  // Inside the Android App: Never show static landing page with "Download APK" buttons!
   if (inApp) {
+    if (authError === 'network') {
+      return <AppNetworkErrorScreen onRetry={retryAuth} onLogout={logout} />;
+    }
     return user ? <Navigate to="/dashboard" replace /> : <Navigate to="/auth" replace />;
   }
 
-  // In Web Browser: If user is already logged in, take them straight to dashboard
+  // Web Browser:
   if (user) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -58,13 +90,24 @@ const RootRoute = () => {
   return <Landing />;
 };
 
+/**
+ * Fallback Route:
+ * Directs invalid paths back to /app for native wrappers or / for web.
+ */
+const FallbackRoute = () => {
+  const inApp = isCodeSyncNativeApp();
+  return <Navigate to={inApp ? '/app' : '/'} replace />;
+};
+
 function App() {
   return (
     <AuthProvider>
       <Router>
         <Routes>
-          {/* Smart Root Route */}
+          {/* Smart Root & App Entry Routes */}
           <Route path="/" element={<RootRoute />} />
+          <Route path="/app" element={<AppEntryRoute />} />
+          <Route path="/landing" element={<Landing />} />
           <Route path="/auth" element={<Auth />} />
 
           {/* Protected MERN App Routes */}
@@ -110,7 +153,7 @@ function App() {
           />
 
           {/* Fallback routing */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<FallbackRoute />} />
         </Routes>
       </Router>
     </AuthProvider>
