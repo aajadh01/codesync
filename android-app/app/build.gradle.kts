@@ -9,12 +9,12 @@ val serverUrl = project.findProperty("CODESYNC_SERVER_URL") as? String ?: "https
 
 android {
     namespace = "com.codesync.app"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.codesync.app"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
 

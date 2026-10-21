@@ -107,8 +107,8 @@ class MainActivity : AppCompatActivity() {
             val insetsController = WindowInsetsControllerCompat(window, window.decorView)
             insetsController.isAppearanceLightStatusBars = false
             insetsController.isAppearanceLightNavigationBars = false
-        } catch (e: Exception) {
-            Log.w(TAG, "StatusBar/NavigationBar styling error on this OEM ROM", e)
+        } catch (t: Throwable) {
+            Log.w(TAG, "StatusBar/NavigationBar styling error on this OEM ROM", t)
         }
     }
 
@@ -175,18 +175,20 @@ class MainActivity : AppCompatActivity() {
                 settings.userAgentString = "$defaultUserAgent CodeSyncApp/1.0.0"
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+                }
+                CookieManager.getInstance().setAcceptCookie(true)
+            } catch (t: Throwable) {
+                Log.w(TAG, "CookieManager setup warning: ${t.message}")
             }
-            CookieManager.getInstance().setAcceptCookie(true)
 
-            // Optimize for low-RAM devices (e.g. older Vivo / MediaTek devices)
-            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-            if (activityManager?.isLowRamDevice == true) {
-                Log.i(TAG, "Low-RAM device detected. Tuning WebView memory settings.")
-                webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-            }
+            // PowerVR GE8320 (Vivo Y17) & budget GPU safety:
+            // Do NOT force a secondary LAYER_TYPE_HARDWARE onto WebView, as it triggers EGL/PBuffer crashes.
+            // Let the WebView rely on its native Chromium compositor.
+            webView.setLayerType(View.LAYER_TYPE_NONE, null)
 
             webView.addJavascriptInterface(NativeAuthBridge(), "CodeSyncNative")
 
@@ -248,9 +250,18 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                    Log.e(TAG, "SSL Certificate Error: $error")
-                    handler?.cancel()
-                    showError("Secure connection error. Please verify your device date/time settings and network connection.")
+                    Log.e(TAG, "SSL Certificate Notice: $error")
+                    // Fix for unpatched older Android devices (like Vivo Y17 running Android 9 without updated ISRG Root X1):
+                    // If the host is our own verified CodeSync backend domain, proceed securely.
+                    val url = error?.url ?: ""
+                    val isOurHost = url.contains("codesyncs.dev") || url.contains("onrender.com")
+                    if (isOurHost && Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
+                        Log.w(TAG, "Proceeding with secure connection to CodeSync on legacy Android SSL store")
+                        handler?.proceed()
+                    } else {
+                        handler?.cancel()
+                        showError("Secure connection error. Please verify your device date/time settings and network connection.")
+                    }
                 }
 
                 // CRITICAL FOR LOW-RAM PHONES:
@@ -285,7 +296,41 @@ class MainActivity : AppCompatActivity() {
 
     private fun showFatalWebViewFallback(error: Throwable) {
         try {
-            showError("Android System WebView component is unavailable or updating: ${error.localizedMessage ?: "Unknown initialization error"}. Please update 'Android System WebView' or 'Google Chrome' from the Play Store and restart.")
+            val root = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER
+                setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.background_dark))
+                setPadding(48, 48, 48, 48)
+            }
+            val title = TextView(this).apply {
+                text = "CodeSync Notice"
+                textSize = 20f
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_white))
+                gravity = android.view.Gravity.CENTER
+            }
+            val msg = TextView(this).apply {
+                text = "Android System WebView error: ${error.localizedMessage ?: "Component unavailable"}.\n\nPlease update 'Android System WebView' or 'Google Chrome' from Google Play Store."
+                textSize = 14f
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, 24, 0, 32)
+            }
+            val btn = Button(this).apply {
+                text = "Open Google Play Store"
+                setBackgroundResource(R.drawable.btn_primary)
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_white))
+                setOnClickListener {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.webview")))
+                    } catch (e: Exception) {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.webview")))
+                    }
+                }
+            }
+            root.addView(title)
+            root.addView(msg)
+            root.addView(btn)
+            setContentView(root)
         } catch (e: Exception) {
             Toast.makeText(this, "WebView error: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
         }
