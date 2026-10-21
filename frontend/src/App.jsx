@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import Layout from './components/Layout';
+import { isCodeSyncNativeApp } from './utils/isNativeApp';
 
 // Pages
 import Landing from './pages/Landing';
@@ -31,13 +32,39 @@ const ProtectedRoute = ({ children }) => {
   return <Layout>{children}</Layout>;
 };
 
+// Smart Root Route: Directs native Android app to app views, and Web to landing/dashboard
+const RootRoute = () => {
+  const { user, loading } = useContext(AuthContext);
+  const inApp = isCodeSyncNativeApp();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-dark-base text-zinc-100">
+        <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Inside the Android App: Never show static landing page with "Download APK" buttons!
+  if (inApp) {
+    return user ? <Navigate to="/dashboard" replace /> : <Navigate to="/auth" replace />;
+  }
+
+  // In Web Browser: If user is already logged in, take them straight to dashboard
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Landing />;
+};
+
 function App() {
   return (
     <AuthProvider>
       <Router>
         <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<Landing />} />
+          {/* Smart Root Route */}
+          <Route path="/" element={<RootRoute />} />
           <Route path="/auth" element={<Auth />} />
 
           {/* Protected MERN App Routes */}

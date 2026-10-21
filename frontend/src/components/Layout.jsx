@@ -29,7 +29,7 @@ const Layout = ({ children }) => {
 
   const handleLogout = () => {
     logout();
-    navigate('/');
+    navigate('/auth');
   };
 
   const getPageTitle = () => {

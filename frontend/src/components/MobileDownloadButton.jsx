@@ -53,6 +53,13 @@ const MobileDownloadButton = () => {
     } catch {}
   };
 
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadClick = () => {
+    setDownloading(true);
+    setTimeout(() => setDownloading(false), 4000);
+  };
+
   // If the user is running inside the native Android app, or has dismissed the prompt, hide it
   if (isInApp || dismissed) {
     return null;
@@ -79,20 +86,21 @@ const MobileDownloadButton = () => {
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-zinc-100">CodeSync Android App</span>
               <span className="text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                v1.0.0
+                v1.0.1
               </span>
             </div>
-            <p className="text-[11px] text-zinc-400">Native Android APK • 5.5 MB</p>
+            <p className="text-[11px] text-zinc-400">Native APK • 5.5 MB • Vivo Y17/Y16 Supported</p>
           </div>
         </div>
 
         <a
           href="/codesync.apk"
-          download="codesync.apk"
+          download="CodeSync-v1.0.1.apk"
+          onClick={handleDownloadClick}
           className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-semibold py-2 px-3 rounded-lg shadow-md transition-all shrink-0"
         >
           <Download className="w-3.5 h-3.5" />
-          <span>Download</span>
+          <span>{downloading ? 'Starting...' : 'Download'}</span>
         </a>
       </div>
 

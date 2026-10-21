@@ -172,7 +172,7 @@ class MainActivity : AppCompatActivity() {
             // Identify CodeSync native wrapper in user agent
             val defaultUserAgent = settings.userAgentString ?: ""
             if (!defaultUserAgent.contains("CodeSyncApp")) {
-                settings.userAgentString = "$defaultUserAgent CodeSyncApp/1.0.0"
+                settings.userAgentString = "$defaultUserAgent CodeSyncApp/1.0.1"
             }
 
             try {
