@@ -97,6 +97,25 @@ object AuthStorage {
         return getPrefs(context).getString(PREFIX_WIDGET_LIST_NAME + appWidgetId, null)
     }
 
+    /**
+     * Fallback lookup: Returns the most recently configured list ID and name across all
+     * widgets if an explicit widget ID mapping is unavailable or lost during IPC.
+     */
+    fun getFallbackWidgetList(context: Context): Pair<String, String>? {
+        val prefs = getPrefs(context)
+        for (k in prefs.all.keys) {
+            if (k.startsWith(PREFIX_WIDGET_LIST_ID)) {
+                val listId = prefs.getString(k, null)
+                if (!listId.isNullOrEmpty()) {
+                    val idSuffix = k.removePrefix(PREFIX_WIDGET_LIST_ID)
+                    val listName = prefs.getString(PREFIX_WIDGET_LIST_NAME + idSuffix, "Group Focus")
+                    return Pair(listId, listName ?: "Group Focus")
+                }
+            }
+        }
+        return null
+    }
+
     fun setWidgetFilters(context: Context, appWidgetId: Int, difficulty: String, topic: String) {
         getPrefs(context).edit().apply {
             putString(PREFIX_WIDGET_DIFF + appWidgetId, difficulty)

@@ -61,24 +61,39 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
             }
 
             // Immediately apply cached stats if available
+            var cachedTotal = 0
+            var cachedSolved = 0
             if (listId != null) {
                 val cached = AuthStorage.getWidgetCache(context, "gf_$listId")
                 if (!cached.isNullOrEmpty()) {
                     try {
                         val obj = JSONObject(cached)
-                        val solved = obj.optInt("solvedCount", 0)
-                        val total = obj.optInt("totalProblems", 0)
+                        cachedSolved = obj.optInt("solvedCount", 0)
+                        cachedTotal = obj.optInt("totalProblems", 0)
                         val pct = obj.optInt("completionPercentage", 0)
-                        views.setTextViewText(R.id.tv_progress_stats, "$solved of $total Solved ($pct%)")
+                        views.setTextViewText(R.id.tv_progress_stats, "$cachedSolved of $cachedTotal Solved ($pct%)")
                         views.setProgressBar(R.id.pb_completion, 100, pct, false)
                     } catch (ignored: Exception) {}
                 }
             }
 
+            // Set empty view text dynamically based on state
+            if (!isLoggedIn) {
+                views.setTextViewText(R.id.tv_empty, context.getString(R.string.widget_not_logged_in))
+            } else if (listId.isNullOrEmpty()) {
+                views.setTextViewText(R.id.tv_empty, "Tap the target icon above to select a study group")
+            } else if (cachedTotal > 0 && cachedSolved >= cachedTotal) {
+                views.setTextViewText(R.id.tv_empty, "All problems solved in this group! 🎉")
+            } else if (cachedTotal == 0 && listId != null) {
+                views.setTextViewText(R.id.tv_empty, "No problems in this group yet. Tap + Add!")
+            } else {
+                views.setTextViewText(R.id.tv_empty, "Loading pending problems...")
+            }
+
             // Set up RemoteViewsService Adapter for ListView with unique URI
             val serviceIntent = Intent(context, GroupFocusService::class.java).apply {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                this.data = Uri.parse("codesync://widget/groupfocus/$appWidgetId/${System.currentTimeMillis()}")
+                this.data = Uri.parse("codesync://widget/groupfocus/$appWidgetId")
             }
             views.setRemoteAdapter(R.id.lv_pending_problems, serviceIntent)
             views.setEmptyView(R.id.lv_pending_problems, R.id.tv_empty)
@@ -102,6 +117,7 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
             val refreshIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
                 action = ACTION_REFRESH
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                data = Uri.parse("codesync://widget/refresh/$appWidgetId")
             }
             val refreshPi = PendingIntent.getBroadcast(
                 context,
@@ -150,6 +166,7 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.btn_config, configPi)
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
+            appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.lv_pending_problems)
         }
 
         // Asynchronously fetch fresh data from server, cache it, and push updates immediately
@@ -223,10 +240,18 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
                                 views.setProgressBar(R.id.pb_completion, 100, listDetails.completionPercentage, false)
                                 views.setViewVisibility(R.id.tv_unauth_banner, View.GONE)
 
-                                // Connect adapter with fresh timestamp to force reload
+                                if (listDetails.totalProblems > 0 && listDetails.solvedCount >= listDetails.totalProblems) {
+                                    views.setTextViewText(R.id.tv_empty, "All problems solved in this group! 🎉")
+                                } else if (listDetails.totalProblems == 0) {
+                                    views.setTextViewText(R.id.tv_empty, "No problems in this group yet. Tap + Add!")
+                                } else {
+                                    views.setTextViewText(R.id.tv_empty, "Loading pending problems...")
+                                }
+
+                                // Connect adapter with clean, stable URI keyed to appWidgetId
                                 val serviceIntent = Intent(context, GroupFocusService::class.java).apply {
                                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                                    this.data = Uri.parse("codesync://widget/groupfocus/$appWidgetId/${System.currentTimeMillis()}")
+                                    this.data = Uri.parse("codesync://widget/groupfocus/$appWidgetId")
                                 }
                                 views.setRemoteAdapter(R.id.lv_pending_problems, serviceIntent)
                                 views.setEmptyView(R.id.lv_pending_problems, R.id.tv_empty)
@@ -249,6 +274,7 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
                                 val refreshIntent = Intent(context, GroupFocusWidgetProvider::class.java).apply {
                                     action = ACTION_REFRESH
                                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                                    data = Uri.parse("codesync://widget/refresh/$appWidgetId")
                                 }
                                 val refreshPi = PendingIntent.getBroadcast(
                                     context,
@@ -489,7 +515,10 @@ class GroupFocusWidgetProvider : AppWidgetProvider() {
             }
 
             ACTION_REFRESH -> {
-                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID).let { id ->
+                    if (id != AppWidgetManager.INVALID_APPWIDGET_ID) id
+                    else intent.data?.lastPathSegment?.toIntOrNull() ?: AppWidgetManager.INVALID_APPWIDGET_ID
+                }
                 if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                     Toast.makeText(context, "Syncing Group Focus...", Toast.LENGTH_SHORT).show()
                     val pendingResult = goAsync()

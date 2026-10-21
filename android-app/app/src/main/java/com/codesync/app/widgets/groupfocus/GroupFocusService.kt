@@ -22,12 +22,29 @@ class GroupFocusViewsFactory(
     intent: Intent
 ) : RemoteViewsService.RemoteViewsFactory {
 
-    private val appWidgetId = intent.getIntExtra(
-        android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID,
+    private val appWidgetId: Int = run {
+        val extraId = intent.getIntExtra(
+            android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID,
+            android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
+        )
+        if (extraId != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) {
+            return@run extraId
+        }
+
+        val lastSeg = intent.data?.lastPathSegment?.toIntOrNull()
+        if (lastSeg != null && lastSeg != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) {
+            return@run lastSeg
+        }
+
+        val segments = intent.data?.pathSegments ?: emptyList()
+        for (seg in segments) {
+            val parsed = seg.toIntOrNull()
+            if (parsed != null && parsed != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) {
+                return@run parsed
+            }
+        }
+
         android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
-    ).let {
-        if (it != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) it
-        else intent.data?.pathSegments?.getOrNull(2)?.toIntOrNull() ?: android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
     }
 
     private val pendingProblems = mutableListOf<ProblemItem>()
@@ -40,27 +57,46 @@ class GroupFocusViewsFactory(
             return
         }
 
-        var listId = AuthStorage.getWidgetListId(context, appWidgetId)
+        var listId = if (appWidgetId != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) {
+            AuthStorage.getWidgetListId(context, appWidgetId)
+        } else null
+
+        // If specific widget mapping not found, look up latest configured list across preferences
+        if (listId.isNullOrEmpty()) {
+            val fallback = AuthStorage.getFallbackWidgetList(context)
+            if (fallback != null) {
+                listId = fallback.first
+                if (appWidgetId != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) {
+                    AuthStorage.setWidgetListId(context, appWidgetId, listId, fallback.second)
+                }
+            }
+        }
+
+        // Final fallback: fetch user's lists
         if (listId.isNullOrEmpty()) {
             val listsResult = ApiClient.getUserLists(context)
             if (listsResult.isSuccess && listsResult.getOrNull()?.isNotEmpty() == true) {
                 val firstList = listsResult.getOrNull()!![0]
                 listId = firstList.id
-                AuthStorage.setWidgetListId(context, appWidgetId, listId, firstList.name)
+                if (appWidgetId != android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID) {
+                    AuthStorage.setWidgetListId(context, appWidgetId, listId, firstList.name)
+                }
             }
         }
 
         if (listId != null) {
+            var loadedProblems: List<ProblemItem>? = null
+
             // 1. FAST PATH: First check cache for instant render (avoids binder timeout)
             val cached = AuthStorage.getWidgetCache(context, "gf_$listId")
             if (!cached.isNullOrEmpty()) {
                 try {
                     val obj = JSONObject(cached)
                     val arr = obj.optJSONArray("problems") ?: JSONArray()
-                    val loaded = mutableListOf<ProblemItem>()
+                    val list = mutableListOf<ProblemItem>()
                     for (i in 0 until arr.length()) {
                         val pObj = arr.getJSONObject(i)
-                        loaded.add(
+                        list.add(
                             ProblemItem(
                                 id = pObj.getString("id"),
                                 title = pObj.getString("title"),
@@ -72,54 +108,52 @@ class GroupFocusViewsFactory(
                         )
                     }
 
-                    if (loaded.isNotEmpty()) {
-                        pendingProblems.clear()
-                        val pending = loaded.filter { !it.isSolved }
-                        if (pending.isNotEmpty()) {
-                            pendingProblems.addAll(pending)
-                        } else {
-                            pendingProblems.addAll(loaded)
-                        }
-                        return
+                    if (list.isNotEmpty()) {
+                        loadedProblems = list
                     }
                 } catch (ignored: Exception) {}
             }
 
             // 2. SLOW PATH: If cache was completely empty, fetch synchronously
-            val result = ApiClient.getListDetails(context, listId)
-            if (result.isSuccess) {
-                val data = result.getOrNull()!!
-                pendingProblems.clear()
-                val pending = data.problems.filter { !it.isSolved }
+            if (loadedProblems == null) {
+                val result = ApiClient.getListDetails(context, listId)
+                if (result.isSuccess) {
+                    val data = result.getOrNull()!!
+                    loadedProblems = data.problems
+
+                    // Cache metadata & problems
+                    try {
+                        val obj = JSONObject().apply {
+                            put("totalProblems", data.totalProblems)
+                            put("solvedCount", data.solvedCount)
+                            put("completionPercentage", data.completionPercentage)
+                            val arr = JSONArray()
+                            for (p in data.problems) {
+                                arr.put(
+                                    JSONObject().apply {
+                                        put("id", p.id)
+                                        put("title", p.title)
+                                        put("difficulty", p.difficulty)
+                                        put("url", p.url)
+                                        put("topic", p.topic)
+                                        put("isSolved", p.isSolved)
+                                    }
+                                )
+                            }
+                            put("problems", arr)
+                        }
+                        AuthStorage.saveWidgetCache(context, "gf_$listId", obj.toString())
+                    } catch (ignored: Exception) {}
+                }
+            }
+
+            pendingProblems.clear()
+            if (loadedProblems != null) {
+                val pending = loadedProblems.filter { !it.isSolved }
                 if (pending.isNotEmpty()) {
                     pendingProblems.addAll(pending)
-                } else {
-                    pendingProblems.addAll(data.problems)
                 }
-
-                // Cache metadata & problems
-                try {
-                    val obj = JSONObject().apply {
-                        put("totalProblems", data.totalProblems)
-                        put("solvedCount", data.solvedCount)
-                        put("completionPercentage", data.completionPercentage)
-                        val arr = JSONArray()
-                        for (p in data.problems) {
-                            arr.put(
-                                JSONObject().apply {
-                                    put("id", p.id)
-                                    put("title", p.title)
-                                    put("difficulty", p.difficulty)
-                                    put("url", p.url)
-                                    put("topic", p.topic)
-                                    put("isSolved", p.isSolved)
-                                }
-                            )
-                        }
-                        put("problems", arr)
-                    }
-                    AuthStorage.saveWidgetCache(context, "gf_$listId", obj.toString())
-                } catch (ignored: Exception) {}
+                // If all problems are solved, pendingProblems remains empty so tv_empty ("All problems solved in this group! 🎉") displays
             }
         }
     }
